@@ -36,7 +36,7 @@ h1 span { color: #8dd6bd; }
 .primary-button { min-height: 42px; padding: 0 17px; color: #10201e; background: #8dd6bd; font-size: 13px; }
 .primary-button:hover:not(:disabled), .summary-button:hover:not(:disabled) { transform: translateY(-1px); }
 .primary-button:hover:not(:disabled) { background: #aae5ce; }
-.content-grid { display: grid; grid-template-columns: minmax(0, 1.04fr) minmax(0, .96fr); gap: 22px; align-items: start; }
+.content-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 6fr); gap: 22px; align-items: start; }
 .reader-panel, .summary-panel { min-height: 535px; padding: 26px; background: rgba(16, 27, 29, .88); border: 1px solid rgba(226, 239, 232, .1); border-radius: 9px; }
 .panel-heading, .history-heading { display: flex; justify-content: space-between; align-items: start; gap: 14px; }
 .panel-heading h2, .history-heading h2 { margin: 0; color: #edf5f1; font-size: 21px; letter-spacing: -.025em; }
