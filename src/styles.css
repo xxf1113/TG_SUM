@@ -56,7 +56,11 @@ h1 span { color: #8dd6bd; }
 .comments-heading strong { font-size: 13px; }
 .comments-heading span { color: #71847e; font-size: 11px; }
 .visible-label { color: #78c6a9 !important; font-size: 10px !important; letter-spacing: .08em; }
-.comment-list { display: grid; gap: 17px; max-height: 340px; padding-right: 4px; overflow: auto; }
+.comment-list { display: grid; gap: 17px; max-height: 340px; padding-right: 4px; overflow: auto; scrollbar-color: #304842 transparent; scrollbar-width: thin; }
+.comment-list::-webkit-scrollbar { width: 8px; }
+.comment-list::-webkit-scrollbar-track { background: transparent; }
+.comment-list::-webkit-scrollbar-thumb { background: #304842; border: 2px solid transparent; border-radius: 5px; background-clip: padding-box; }
+.comment-list::-webkit-scrollbar-thumb:hover { background: #42645a; background-clip: padding-box; }
 .comment-item { display: flex; gap: 11px; }
 .comment-avatar { flex: 0 0 27px; display: grid; place-items: center; width: 27px; height: 27px; color: #18322c; background: #9ec5b5; border-radius: 50%; font-size: 11px; font-weight: 800; }
 .comment-body { min-width: 0; flex: 1; }
