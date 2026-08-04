@@ -38,5 +38,8 @@ export interface HistoryEntry {
   channel: string;
   createdAt: string;
   post: TelegramPost;
+  comments: TelegramComment[];
+  warnings: string[];
+  fetchedAt: string;
   summary: SummaryResult;
 }

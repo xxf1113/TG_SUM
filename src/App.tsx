@@ -68,6 +68,9 @@ function App() {
       channel: nextPreview.post.channel,
       createdAt: new Date().toISOString(),
       post: nextPreview.post,
+      comments: nextPreview.comments,
+      warnings: nextPreview.warnings,
+      fetchedAt: nextPreview.fetchedAt,
       summary: result,
     };
     await saveHistory(entry);
@@ -94,12 +97,30 @@ function App() {
     }
   }
 
-  function openHistory(entry: HistoryEntry) {
+  async function openHistory(entry: HistoryEntry) {
     setUrl(entry.url);
     setSummary(entry.summary);
-    setPreview({ post: entry.post, comments: [], warnings: ['这是本地历史记录，未重新抓取评论。'], fetchedAt: entry.createdAt });
     setActiveHistoryId(entry.id);
     setError('');
+
+    if (entry.comments !== undefined) {
+      setPreview({ post: entry.post, comments: entry.comments, warnings: entry.warnings ?? [], fetchedAt: entry.fetchedAt ?? entry.createdAt });
+      return;
+    }
+
+    setPreview({ post: entry.post, comments: [], warnings: ['正在为旧历史记录重新抓取公开评论。'], fetchedAt: entry.createdAt });
+    setBusy('preview');
+    try {
+      const refreshed = await requestJson<TelegramPreview>('/api/telegram/preview', { url: entry.url });
+      setPreview(refreshed);
+      await saveHistory({ ...entry, comments: refreshed.comments, warnings: refreshed.warnings, fetchedAt: refreshed.fetchedAt });
+      setHistory(await listHistory());
+    } catch (err) {
+      setPreview({ post: entry.post, comments: [], warnings: ['旧历史记录未保存评论，重新抓取失败，请重新输入链接抓取。'], fetchedAt: entry.createdAt });
+      setError(err instanceof Error ? err.message : '重新抓取评论失败，请稍后重试。');
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function removeHistory(id: string) {
@@ -163,7 +184,7 @@ function App() {
 
         <section className="history-section">
           <div className="history-heading"><div><p className="panel-kicker">LOCAL ARCHIVE</p><h2>最近总结</h2></div><span><Clock3 size={15} />{history.length} / 20</span></div>
-          {history.length ? <div className="history-list">{history.map((entry) => <div className={`history-item ${activeHistoryId === entry.id ? 'active' : ''}`} key={entry.id} onClick={() => openHistory(entry)}><div className="history-channel">@{entry.channel}</div><div className="history-question">{entry.summary.question}</div><time>{formatDate(entry.createdAt)}</time><button className="icon-button danger" title="删除历史记录" onClick={(event) => { event.stopPropagation(); void removeHistory(entry.id); }}><Trash2 size={16} /></button></div>)}</div> : <div className="history-empty"><Clock3 size={17} />完成第一次总结后，结果会出现在这里。</div>}
+          {history.length ? <div className="history-list">{history.map((entry) => <div className={`history-item ${activeHistoryId === entry.id ? 'active' : ''}`} key={entry.id} onClick={() => void openHistory(entry)}><div className="history-channel">@{entry.channel}</div><div className="history-question">{entry.summary.question}</div><time>{formatDate(entry.createdAt)}</time><button className="icon-button danger" title="删除历史记录" onClick={(event) => { event.stopPropagation(); void removeHistory(entry.id); }}><Trash2 size={16} /></button></div>)}</div> : <div className="history-empty"><Clock3 size={17} />完成第一次总结后，结果会出现在这里。</div>}
         </section>
       </main>
       <footer className="footer"><span>ThreadBrief</span><span>仅处理公开 Telegram 页面 · 由 OpenAI 生成总结</span><button className="refresh-button" title="重新读取本地历史" onClick={() => listHistory().then(setHistory)}><RefreshCw size={14} /></button></footer>
