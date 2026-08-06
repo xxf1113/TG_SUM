@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   ExternalLink,
   FileText,
@@ -184,8 +185,14 @@ function App() {
         {error && <div className="alert error-alert"><AlertTriangle size={18} /><span>{error}</span><button className="icon-button" title="关闭提示" onClick={() => setError('')}>×</button></div>}
 
         <div className="content-grid">
-          <section className="reader-panel">
-            <div className="panel-heading"><div><p className="panel-kicker">SOURCE MATERIAL</p><h2>帖子内容</h2></div>{preview && <a className="external-link" href={preview.post.url} target="_blank" rel="noreferrer">打开原帖 <ExternalLink size={14} /></a>}</div>
+          <details className="reader-panel">
+            <summary className="panel-heading reader-toggle">
+              <div><p className="panel-kicker">SOURCE MATERIAL</p><h2>帖子内容</h2></div>
+              <div className="reader-heading-actions">
+                {preview && <a className="external-link" href={preview.post.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>打开原帖 <ExternalLink size={14} /></a>}
+                <ChevronDown className="reader-chevron" size={18} aria-hidden="true" />
+              </div>
+            </summary>
 
             {!preview ? (
               <div className="empty-state"><div className="empty-icon"><FileText size={25} /></div><h3>从一条公开帖子开始</h3><p>输入链接后，这里会显示主贴正文与公开答复。</p></div>
@@ -199,7 +206,7 @@ function App() {
                 {preview.warnings.map((warning) => <div className="alert warning-alert" key={warning}><AlertTriangle size={16} /><span>{warning}</span></div>)}
               </>
             )}
-          </section>
+          </details>
 
           <section className="summary-panel">
             <div className="panel-heading"><div><p className="panel-kicker">AI SYNTHESIS</p><h2>总结结果</h2></div>{summary && <span className="ready-badge"><CheckCircle2 size={14} />已完成</span>}</div>
