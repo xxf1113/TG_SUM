@@ -22,7 +22,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .page-content { max-width: 1280px; margin: 0 auto; padding: 54px 34px 30px; }
 .hero-row { display: flex; justify-content: space-between; align-items: end; margin-bottom: 34px; }
 .eyebrow, .panel-kicker { margin: 0 0 10px; color: #7fbcae; font-size: 10px; font-weight: 760; letter-spacing: .2em; }
-h1 { margin: 0; color: #eff7f3; font-size: clamp(38px, 5vw, 66px); line-height: .98; letter-spacing: -.045em; font-weight: 700; }
+h1 { margin: 0; color: #eff7f3; font-size: 50px; line-height: .98; letter-spacing: -.045em; font-weight: 700; }
 h1 span { color: #8dd6bd; }
 .hero-copy { max-width: 530px; margin: 20px 0 0; color: #9eafaa; font-size: 15px; line-height: 1.7; }
 .hero-stat { display: flex; align-items: center; gap: 12px; padding-bottom: 5px; color: #738680; }
@@ -72,6 +72,16 @@ h1 span { color: #8dd6bd; }
 .comment-body p { margin: 0; color: #9aada6; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
 .summary-button { width: 100%; min-height: 45px; margin-top: 25px; color: #13211f; background: #e5a568; }
 .summary-button:hover:not(:disabled) { background: #f1bb80; }
+.summary-panel .panel-heading h2 { font-size: 23px; }
+.summary-panel .summary-empty h3 { font-size: 18px; }
+.summary-panel .summary-empty p { font-size: 14px; }
+.summary-panel .question-block span { font-size: 12px; }
+.summary-panel .question-block h3 { font-size: 20px; }
+.summary-panel .result-section-title { font-size: 14px; }
+.summary-panel .result-section ul { font-size: 14px; }
+.summary-panel .empty-copy { font-size: 13px; }
+.summary-panel .result-footer { font-size: 12px; }
+.summary-panel .ready-badge { font-size: 11px; }
 .ready-badge { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; color: #8edabb; background: rgba(112, 214, 168, .1); border-radius: 4px; font-size: 10px; }
 .result-content { margin-top: 28px; }
 .question-block { padding: 17px 18px; margin-bottom: 20px; background: rgba(141, 214, 189, .08); border-left: 3px solid #8dd6bd; }
@@ -114,6 +124,7 @@ h1 span { color: #8dd6bd; }
 @media (max-width: 860px) {
   .topbar, .page-content, .footer { padding-left: 20px; padding-right: 20px; }
   .hero-row { align-items: start; }
+  h1 { font-size: 32px; }
   .hero-stat { display: none; }
   .content-grid { grid-template-columns: 1fr; }
   .reader-panel, .summary-panel { min-height: auto; }
@@ -126,7 +137,7 @@ h1 span { color: #8dd6bd; }
   .brand em, .privacy-note { display: none; }
   .page-content { padding-top: 35px; }
   .hero-row { margin-bottom: 25px; }
-  h1 { font-size: 42px; }
+  h1 { font-size: 32px; }
   .hero-copy { margin-top: 15px; font-size: 13px; }
   .input-bar { align-items: stretch; flex-wrap: wrap; padding: 10px; }
   .input-icon { width: 22px; }
