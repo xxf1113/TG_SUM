@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -11,6 +11,7 @@ import {
   MessageCircle,
   RefreshCw,
   Sparkles,
+  Square,
   Trash2,
 } from 'lucide-react';
 import { deleteHistory, listHistory, saveHistory } from './lib/history';
@@ -18,15 +19,20 @@ import type { HistoryEntry, SummaryResult, TelegramPreview } from './types';
 
 type BusyAction = 'preview' | 'summary' | null;
 
-async function requestJson<T>(path: string, body?: unknown): Promise<T> {
+async function requestJson<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method: body ? 'POST' : 'GET',
     headers: body ? { 'content-type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
+    signal,
   });
   const data = (await response.json()) as T & { message?: string };
   if (!response.ok) throw new Error(data.message || '请求失败。');
   return data;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
 }
 
 function formatDate(value?: string): string {
@@ -52,6 +58,7 @@ function App() {
   const [busy, setBusy] = useState<BusyAction>(null);
   const [error, setError] = useState('');
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     listHistory().then(setHistory).catch(() => undefined);
@@ -59,12 +66,12 @@ function App() {
 
   const sourceLabel = useMemo(() => preview ? `${preview.post.channel} / 帖子 ${preview.post.messageId}` : '等待公开帖子', [preview]);
 
-  async function summarizePreview(nextPreview: TelegramPreview) {
-    const result = await requestJson<SummaryResult>('/api/summary', { preview: nextPreview });
+  async function summarizePreview(nextPreview: TelegramPreview, requestUrl: string, signal: AbortSignal) {
+    const result = await requestJson<SummaryResult>('/api/summary', { preview: nextPreview }, signal);
     setSummary(result);
     const entry: HistoryEntry = {
       id: `${nextPreview.post.channel}-${nextPreview.post.messageId}-${Date.now()}`,
-      url,
+      url: requestUrl,
       channel: nextPreview.post.channel,
       createdAt: new Date().toISOString(),
       post: nextPreview.post,
@@ -79,25 +86,34 @@ function App() {
   }
 
   async function handlePreview() {
-    if (!url.trim() || busy) return;
+    const requestUrl = url.trim();
+    if (!requestUrl || busy) return;
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setBusy('preview');
     setError('');
     setSummary(null);
     setPreview(null);
     setActiveHistoryId(null);
     try {
-      const nextPreview = await requestJson<TelegramPreview>('/api/telegram/preview', { url });
+      const nextPreview = await requestJson<TelegramPreview>('/api/telegram/preview', { url: requestUrl }, controller.signal);
       setPreview(nextPreview);
       setBusy('summary');
-      await summarizePreview(nextPreview);
+      await summarizePreview(nextPreview, requestUrl, controller.signal);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '抓取失败，请稍后重试。');
+      setError(isAbortError(err) ? '已取消当前请求。' : err instanceof Error ? err.message : '抓取失败，请稍后重试。');
     } finally {
+      if (abortControllerRef.current === controller) abortControllerRef.current = null;
       setBusy(null);
     }
   }
 
+  function cancelRequest() {
+    abortControllerRef.current?.abort();
+  }
+
   async function openHistory(entry: HistoryEntry) {
+    if (busy) return;
     setUrl(entry.url);
     setSummary(entry.summary);
     setActiveHistoryId(entry.id);
@@ -109,16 +125,19 @@ function App() {
     }
 
     setPreview({ post: entry.post, comments: [], warnings: ['正在为旧历史记录重新抓取公开评论。'], fetchedAt: entry.createdAt });
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setBusy('preview');
     try {
-      const refreshed = await requestJson<TelegramPreview>('/api/telegram/preview', { url: entry.url });
+      const refreshed = await requestJson<TelegramPreview>('/api/telegram/preview', { url: entry.url }, controller.signal);
       setPreview(refreshed);
       await saveHistory({ ...entry, comments: refreshed.comments, warnings: refreshed.warnings, fetchedAt: refreshed.fetchedAt });
       setHistory(await listHistory());
     } catch (err) {
       setPreview({ post: entry.post, comments: [], warnings: ['旧历史记录未保存评论，重新抓取失败，请重新输入链接抓取。'], fetchedAt: entry.createdAt });
-      setError(err instanceof Error ? err.message : '重新抓取评论失败，请稍后重试。');
+      setError(isAbortError(err) ? '已取消重新抓取评论。' : err instanceof Error ? err.message : '重新抓取评论失败，请稍后重试。');
     } finally {
+      if (abortControllerRef.current === controller) abortControllerRef.current = null;
       setBusy(null);
     }
   }
@@ -153,7 +172,7 @@ function App() {
         <section className="input-bar" aria-label="Telegram 链接输入">
           <div className="input-icon"><Link2 size={19} /></div>
           <input value={url} onChange={(event) => setUrl(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void handlePreview(); }} placeholder="https://t.me/channel/123" aria-label="Telegram 帖子链接" />
-          <button className="primary-button" onClick={() => void handlePreview()} disabled={!url.trim() || Boolean(busy)}>{busy ? <LoaderCircle className="spin" size={17} /> : <ArrowRight size={17} />}{busy === 'preview' ? '正在抓取' : busy === 'summary' ? '正在总结' : '抓取并总结'}</button>
+          {busy ? <><button className="primary-button progress-button" disabled><LoaderCircle className="spin" size={17} />{busy === 'preview' ? '正在抓取' : '正在总结'}</button><button className="cancel-button" onClick={cancelRequest} title="取消当前请求"><Square size={15} />取消</button></> : <button className="primary-button" onClick={() => void handlePreview()} disabled={!url.trim()}><ArrowRight size={17} />抓取并总结</button>}
         </section>
 
         {error && <div className="alert error-alert"><AlertTriangle size={18} /><span>{error}</span><button className="icon-button" title="关闭提示" onClick={() => setError('')}>×</button></div>}

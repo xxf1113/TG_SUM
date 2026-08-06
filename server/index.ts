@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { extname, join, normalize } from 'node:path';
+import { extname, isAbsolute, join, normalize, relative as relativePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvFile } from 'node:process';
 import { fetchTelegramPreview, TelegramFetchError } from './telegram';
-import { summarizeTelegramPost } from './summary';
+import { OpenAISummaryError, summarizeTelegramPost } from './summary';
 import type { TelegramPreview } from './types';
 
 try {
@@ -15,14 +15,44 @@ try {
 
 const port = Number(process.env.PORT || 8787);
 const rootDir = fileURLToPath(new URL('..', import.meta.url));
+const ALLOWED_ORIGINS = new Set(['http://127.0.0.1:5173', 'http://localhost:5173']);
 
-function json(response: ServerResponse, status: number, body: unknown): void {
+function isAllowedOrigin(request: IncomingMessage): boolean {
+  const origin = request.headers.origin;
+  return !origin || ALLOWED_ORIGINS.has(origin);
+}
+
+function corsHeaders(request: IncomingMessage): Record<string, string> {
+  const origin = request.headers.origin;
+  return origin && ALLOWED_ORIGINS.has(origin)
+    ? { 'access-control-allow-origin': origin, vary: 'Origin' }
+    : {};
+}
+
+function json(response: ServerResponse, status: number, body: unknown, request?: IncomingMessage): void {
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
-    'access-control-allow-origin': '*',
+    ...(request ? corsHeaders(request) : {}),
   });
   response.end(JSON.stringify(body));
+}
+
+function createRequestSignal(request: IncomingMessage, response: ServerResponse): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  const abort = () => controller.abort('REQUEST_ABORTED');
+  const close = () => {
+    if (!response.writableEnded) abort();
+  };
+  request.once('aborted', abort);
+  response.once('close', close);
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      request.removeListener('aborted', abort);
+      response.removeListener('close', close);
+    },
+  };
 }
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -35,7 +65,25 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 }
 
 function errorMessage(error: unknown): { status: number; message: string } {
-  if (error instanceof TelegramFetchError) return { status: error.status === 429 ? 429 : 400, message: error.message };
+  if (error instanceof TelegramFetchError) {
+    if (error.code === 'TELEGRAM_TIMEOUT') return { status: 504, message: 'Telegram 抓取超时，请缩小目标帖子或稍后重试。' };
+    if (error.code === 'TELEGRAM_CANCELLED') return { status: 499, message: '抓取已取消。' };
+    return { status: error.status === 429 ? 429 : 400, message: error.message };
+  }
+  if (error instanceof OpenAISummaryError) {
+    const messages: Record<string, string> = {
+      OPENAI_AUTH_FAILED: 'OpenAI Key 无效或已过期，请检查 OPENAI_API_KEY。',
+      OPENAI_PERMISSION_DENIED: 'OpenAI Key 没有访问该模型或接口的权限。',
+      OPENAI_INSUFFICIENT_QUOTA: 'OpenAI 账户余额或配额不足，请检查计费设置。',
+      OPENAI_RATE_LIMITED: 'OpenAI 请求过于频繁，请稍后重试。',
+      OPENAI_MODEL_NOT_FOUND: '模型不存在，或中转站不支持当前 OPENAI_MODEL。',
+      OPENAI_STRUCTURED_OUTPUT_UNSUPPORTED: '当前模型或中转站不支持结构化 JSON 输出，请更换模型或中转站。',
+      OPENAI_TIMEOUT: 'OpenAI 请求超时，请稍后重试或降低评论内容量。',
+      OPENAI_CANCELLED: '总结已取消。',
+      OPENAI_REQUEST_FAILED: 'OpenAI 请求失败，请检查中转站地址、网络和模型配置。',
+    };
+    return { status: error.code === 'OPENAI_TIMEOUT' ? 504 : error.code === 'OPENAI_CANCELLED' ? 499 : 502, message: messages[error.code] || messages.OPENAI_REQUEST_FAILED };
+  }
   if (error instanceof Error) {
     if (error.message === 'OPENAI_API_KEY_MISSING') return { status: 503, message: '服务端尚未配置 OPENAI_API_KEY。' };
     if (error.message === 'OPENAI_INVALID_RESPONSE') return { status: 502, message: '模型返回格式异常，请重试。' };
@@ -50,10 +98,16 @@ function serveStatic(request: IncomingMessage, response: ServerResponse): boolea
   if (!request.url || request.method !== 'GET') return false;
   const distDir = join(rootDir, 'dist');
   if (!existsSync(distDir)) return false;
-  const requested = decodeURIComponent(request.url.split('?')[0]);
+  let requested: string;
+  try {
+    requested = decodeURIComponent(request.url.split('?')[0]);
+  } catch {
+    return false;
+  }
   const relative = requested === '/' ? 'index.html' : requested.replace(/^\/+/, '');
   const candidate = normalize(join(distDir, relative));
-  if (!candidate.startsWith(normalize(distDir)) || !existsSync(candidate) || !statSync(candidate).isFile()) return false;
+  const outsideRoot = relativePath(normalize(distDir), candidate);
+  if (outsideRoot === '..' || outsideRoot.startsWith(`..${sep}`) || isAbsolute(outsideRoot) || !existsSync(candidate) || !statSync(candidate).isFile()) return false;
   const types: Record<string, string> = { '.css': 'text/css', '.js': 'text/javascript', '.html': 'text/html', '.svg': 'image/svg+xml' };
   response.writeHead(200, { 'content-type': `${types[extname(candidate)] || 'application/octet-stream'}; charset=utf-8` });
   response.end(readFileSync(candidate));
@@ -62,33 +116,46 @@ function serveStatic(request: IncomingMessage, response: ServerResponse): boolea
 
 const server = createServer(async (request, response) => {
   if (request.method === 'OPTIONS') {
-    response.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, GET, OPTIONS', 'access-control-allow-headers': 'content-type' });
+    if (!isAllowedOrigin(request)) {
+      json(response, 403, { message: '不允许的请求来源。' });
+      return;
+    }
+    response.writeHead(204, { ...corsHeaders(request), 'access-control-allow-methods': 'POST, GET, OPTIONS', 'access-control-allow-headers': 'content-type' });
     response.end();
     return;
   }
   if (serveStatic(request, response)) return;
+  if (!isAllowedOrigin(request)) {
+    json(response, 403, { message: '不允许的请求来源。' });
+    return;
+  }
+  const requestContext = createRequestSignal(request, response);
   if (request.url === '/api/health' && request.method === 'GET') {
-    json(response, 200, { ok: true });
+    json(response, 200, { ok: true }, request);
+    requestContext.cleanup();
     return;
   }
   try {
     if (request.url === '/api/telegram/preview' && request.method === 'POST') {
       const body = await readJson(request);
       if (typeof body.url !== 'string') throw new TelegramFetchError('请提供 Telegram 帖子链接。');
-      json(response, 200, await fetchTelegramPreview(body.url));
+      json(response, 200, await fetchTelegramPreview(body.url, requestContext.signal), request);
       return;
     }
     if (request.url === '/api/summary' && request.method === 'POST') {
       const body = await readJson(request);
       const preview = body.preview as TelegramPreview | undefined;
       if (!preview?.post?.text || !Array.isArray(preview.comments)) throw new Error('INVALID_JSON');
-      json(response, 200, await summarizeTelegramPost(preview.post, preview.comments, preview.warnings || []));
+      json(response, 200, await summarizeTelegramPost(preview.post, preview.comments, preview.warnings || [], requestContext.signal), request);
       return;
     }
-    json(response, 404, { message: '接口不存在。' });
+    json(response, 404, { message: '接口不存在。' }, request);
   } catch (error) {
+    if (requestContext.signal.aborted && response.destroyed) return;
     const result = errorMessage(error);
-    json(response, result.status, { message: result.message });
+    json(response, result.status, { message: result.message }, request);
+  } finally {
+    requestContext.cleanup();
   }
 });
 

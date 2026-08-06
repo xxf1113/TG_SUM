@@ -48,15 +48,24 @@ describe('telegram html parsing', () => {
     expect(parsed.repliesUrl).toContain('comment=9');
   });
 
-  it('deduplicates empty and repeated comments', () => {
+  it('deduplicates repeated ids but keeps same-text comments from different users', () => {
     const html = `
       <div class="tgme_widget_message_wrap" data-post="example_channel/42"><div class="tgme_widget_message_text">主贴</div></div>
+      <div class="tgme_widget_message_wrap" data-post="discussion/1"><span class="tgme_widget_message_owner_name">甲</span><div class="tgme_widget_message_text">同一个答案</div></div>
       <div class="tgme_widget_message_wrap" data-post="discussion/1"><span class="tgme_widget_message_owner_name">甲</span><div class="tgme_widget_message_text">同一个答案</div></div>
       <div class="tgme_widget_message_wrap" data-post="discussion/2"><span class="tgme_widget_message_owner_name">乙</span><div class="tgme_widget_message_text">同一个答案</div></div>
       <div class="tgme_widget_message_wrap" data-post="discussion/3"><div class="tgme_widget_message_text"></div></div>`;
     const comments = parseCommentsPage(html, 'example_channel/42');
-    expect(comments).toHaveLength(1);
+    expect(comments).toHaveLength(2);
     expect(comments[0].text).toBe('同一个答案');
+    expect(comments[1].text).toBe('同一个答案');
+  });
+
+  it('uses text as a fallback when a comment has no stable id', () => {
+    const html = `
+      <div class="tgme_widget_message_wrap"><div class="tgme_widget_message_text">没有 ID 的评论</div></div>
+      <div class="tgme_widget_message_wrap"><div class="tgme_widget_message_text">没有 ID 的评论</div></div>`;
+    expect(parseCommentsPage(html, 'example_channel/42')).toHaveLength(1);
   });
 
   it('parses discussion-widget comments and their author ids', () => {
