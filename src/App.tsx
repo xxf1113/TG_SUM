@@ -9,13 +9,14 @@ import {
   Link2,
   LoaderCircle,
   MessageCircle,
+  Quote,
   RefreshCw,
   Sparkles,
   Square,
   Trash2,
 } from 'lucide-react';
 import { deleteHistory, listHistory, saveHistory } from './lib/history';
-import type { HistoryEntry, SummaryResult, TelegramPreview } from './types';
+import type { HistoryEntry, SummaryItem, SummaryResult, SummarySectionItem, TelegramPreview } from './types';
 
 type BusyAction = 'preview' | 'summary' | null;
 
@@ -41,11 +42,16 @@ function formatDate(value?: string): string {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
-function ResultSection({ title, items, tone }: { title: string; items: string[]; tone: 'teal' | 'amber' | 'coral' | 'slate' }) {
+function normalizeSummaryItem(item: SummarySectionItem): SummaryItem {
+  return typeof item === 'string' ? { text: item, evidence: [] } : item;
+}
+
+function ResultSection({ title, items, tone }: { title: string; items: SummarySectionItem[]; tone: 'teal' | 'amber' | 'coral' | 'slate' }) {
+  const normalizedItems = items.map(normalizeSummaryItem);
   return (
     <section className={`result-section ${tone}`}>
       <div className="result-section-title"><span className="section-dot" />{title}</div>
-      {items.length ? <ul>{items.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p className="empty-copy">暂无明确内容</p>}
+      {normalizedItems.length ? <ul>{normalizedItems.map((item, index) => <li key={`${item.text}-${index}`}><div className="result-item-text">{item.text}</div>{item.evidence.length > 0 && <div className="evidence-list"><div className="evidence-label"><Quote size={13} />评论依据</div>{item.evidence.map((evidence, evidenceIndex) => <div className="evidence-item" key={`${evidence.commentId}-${evidenceIndex}`}><strong>{evidence.author}</strong><span>“{evidence.quote}”</span></div>)}</div>}</li>)}</ul> : <p className="empty-copy">暂无明确内容</p>}
     </section>
   );
 }

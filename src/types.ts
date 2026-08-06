@@ -24,11 +24,24 @@ export interface TelegramPreview {
   fetchedAt: string;
 }
 
+export interface SummaryEvidence {
+  commentId: string;
+  author: string;
+  quote: string;
+}
+
+export interface SummaryItem {
+  text: string;
+  evidence: SummaryEvidence[];
+}
+
+export type SummarySectionItem = SummaryItem | string;
+
 export interface SummaryResult {
   question: string;
-  consensus: string[];
-  disagreements: string[];
-  recommendations: string[];
+  consensus: SummarySectionItem[];
+  disagreements: SummarySectionItem[];
+  recommendations: SummarySectionItem[];
   limitations: string[];
 }
 

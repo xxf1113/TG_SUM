@@ -96,6 +96,12 @@ h1 span { color: #8dd6bd; }
 .result-section ul { display: grid; gap: 8px; margin: 0; padding-left: 18px; color: #a9bbb5; font-size: 13px; line-height: 1.6; }
 .result-section li::marker { color: #719f91; }
 .result-section.amber li::marker { color: #c58d59; }
+.result-item-text { color: inherit; }
+.evidence-list { display: grid; gap: 6px; padding: 9px 11px; margin-top: 8px; background: rgba(141, 214, 189, .055); border-left: 2px solid rgba(141, 214, 189, .42); }
+.evidence-label { display: flex; align-items: center; gap: 6px; color: #86b9a9; font-size: 11px; font-weight: 720; }
+.evidence-item { display: flex; min-width: 0; gap: 8px; color: #8fa69e; font-size: 12px; line-height: 1.5; }
+.evidence-item strong { flex: 0 0 auto; color: #b7d2c7; font-weight: 650; }
+.evidence-item span { min-width: 0; overflow-wrap: anywhere; }
 .empty-copy { margin: 0; color: #647872; font-size: 12px; }
 .result-footer { display: flex; align-items: center; gap: 7px; padding-top: 19px; color: #6f837c; font-size: 11px; }
 .alert { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-radius: 6px; font-size: 12px; line-height: 1.5; }

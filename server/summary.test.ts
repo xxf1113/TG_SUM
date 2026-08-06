@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import OpenAI from 'openai';
-import { classifyOpenAIError, DEFAULT_OPENAI_BASE_URL, getOpenAIBaseUrl } from './summary';
+import { classifyOpenAIError, DEFAULT_OPENAI_BASE_URL, getOpenAIBaseUrl, normalizeSummaryResult } from './summary';
 
 const originalBaseUrl = process.env.OPENAI_BASE_URL;
 const originalApiBase = process.env.OPENAI_API_BASE;
@@ -42,5 +42,23 @@ describe('OpenAI error classification', () => {
 
   it('distinguishes request timeouts', () => {
     expect(classifyOpenAIError(new OpenAI.APIConnectionTimeoutError()).code).toBe('OPENAI_TIMEOUT');
+  });
+});
+
+describe('summary evidence normalization', () => {
+  it('keeps evidence tied to fetched comments and replaces inaccurate quotes', () => {
+    const comments = [{ id: 'discussion/1', author: '甲', publishedAt: '', text: '建议先备份数据再操作。' }];
+    const result = normalizeSummaryResult({
+      question: '应该怎么做？',
+      consensus: [{ text: '先备份数据。', evidence: [{ commentId: 'discussion/1', quote: '不存在的原文' }, { commentId: 'fake/2', quote: '伪造引用' }] }],
+      disagreements: [],
+      recommendations: [],
+      limitations: [],
+    }, comments);
+
+    expect(result?.consensus[0]).toEqual({
+      text: '先备份数据。',
+      evidence: [{ commentId: 'discussion/1', author: '甲', quote: '建议先备份数据再操作。' }],
+    });
   });
 });

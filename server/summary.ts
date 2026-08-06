@@ -1,11 +1,31 @@
 import OpenAI, { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from 'openai';
-import type { SummaryResult, TelegramComment, TelegramPost } from './types';
+import type { SummaryEvidence, SummaryItem, SummaryResult, TelegramComment, TelegramPost } from './types';
 
 export const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_OPENAI_TIMEOUT = 60_000;
 const MAX_POST_CHARS = 20_000;
 const MAX_COMMENT_CHARS = 2_000;
 const MAX_COMMENT_INPUT_CHARS = 100_000;
+
+const evidenceSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    commentId: { type: 'string' },
+    quote: { type: 'string' },
+  },
+  required: ['commentId', 'quote'],
+} as const;
+
+const summaryItemSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    text: { type: 'string' },
+    evidence: { type: 'array', items: evidenceSchema },
+  },
+  required: ['text', 'evidence'],
+} as const;
 
 export type OpenAISummaryErrorCode =
   | 'OPENAI_AUTH_FAILED'
@@ -30,9 +50,9 @@ const summarySchema = {
   additionalProperties: false,
   properties: {
     question: { type: 'string' },
-    consensus: { type: 'array', items: { type: 'string' } },
-    disagreements: { type: 'array', items: { type: 'string' } },
-    recommendations: { type: 'array', items: { type: 'string' } },
+    consensus: { type: 'array', items: summaryItemSchema },
+    disagreements: { type: 'array', items: summaryItemSchema },
+    recommendations: { type: 'array', items: summaryItemSchema },
     limitations: { type: 'array', items: { type: 'string' } },
   },
   required: ['question', 'consensus', 'disagreements', 'recommendations', 'limitations'],
@@ -68,7 +88,7 @@ function buildPrompt(post: TelegramPost, comments: TelegramComment[], warnings: 
       break;
     }
     const clipped = truncateText(comment.text, MAX_COMMENT_CHARS);
-    const line = `[评论 ${index + 1}] ${comment.author}：${clipped.text}`;
+    const line = `[评论 ${index + 1} id=${comment.id}] ${comment.author}：${clipped.text}`;
     const remaining = MAX_COMMENT_INPUT_CHARS - commentChars;
     commentLines.push(line.slice(0, remaining));
     commentChars += Math.min(line.length, remaining);
@@ -85,7 +105,7 @@ function buildPrompt(post: TelegramPost, comments: TelegramComment[], warnings: 
   return [
     '请总结一条 Telegram 公开频道帖子。输出简体中文，保持事实准确，不要编造帖子和评论中没有的信息。',
     '主贴是提问或讨论发起内容，评论是答复和观点。请区分主贴提出的问题、评论共同支持的内容和互相冲突的内容。',
-    '每个数组项目写成一句到两句完整的话；没有内容时返回空数组。limitations 只写数据抓取限制或证据不足，不要泛泛而谈。',
+    'consensus、disagreements、recommendations 必须返回对象数组，每项包含 text 和 evidence。evidence 只能引用输入评论中的 commentId，并用 quote 给出评论原文的连续片段；有评论依据时至少引用一条，没有可验证依据时返回空 evidence。limitations 仍然是字符串数组，只写数据抓取限制或证据不足。',
     '',
     `主贴作者：${post.author}`,
     `主贴发布时间：${post.publishedAt || '未知'}`,
@@ -130,6 +150,54 @@ export function classifyOpenAIError(error: unknown): OpenAISummaryError {
   return new OpenAISummaryError('OPENAI_REQUEST_FAILED');
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeEvidence(value: unknown, commentsById: Map<string, TelegramComment>): SummaryEvidence | null {
+  if (!isRecord(value) || typeof value.commentId !== 'string' || typeof value.quote !== 'string') return null;
+  const comment = commentsById.get(value.commentId);
+  if (!comment) return null;
+  const requestedQuote = value.quote.trim();
+  const quote = requestedQuote && comment.text.includes(requestedQuote)
+    ? requestedQuote
+    : comment.text.length > 180 ? `${comment.text.slice(0, 180)}…` : comment.text;
+  return { commentId: comment.id, author: comment.author, quote };
+}
+
+function normalizeSummaryItem(value: unknown, commentsById: Map<string, TelegramComment>): SummaryItem | null {
+  if (!isRecord(value) || typeof value.text !== 'string' || !Array.isArray(value.evidence)) return null;
+  return {
+    text: value.text.trim(),
+    evidence: value.evidence
+      .map((evidence) => normalizeEvidence(evidence, commentsById))
+      .filter((evidence): evidence is SummaryEvidence => evidence !== null),
+  };
+}
+
+export function normalizeSummaryResult(value: unknown, comments: TelegramComment[]): SummaryResult | null {
+  if (!isRecord(value) || typeof value.question !== 'string') return null;
+  const commentsById = new Map(comments.map((comment) => [comment.id, comment]));
+  const normalizeSection = (key: string): SummaryItem[] | null => {
+    const raw = value[key];
+    if (!Array.isArray(raw)) return null;
+    const items = raw.map((item) => normalizeSummaryItem(item, commentsById));
+    return items.every((item): item is SummaryItem => item !== null) ? items : null;
+  };
+  const consensus = normalizeSection('consensus');
+  const disagreements = normalizeSection('disagreements');
+  const recommendations = normalizeSection('recommendations');
+  const limitations = value.limitations;
+  if (!consensus || !disagreements || !recommendations || !Array.isArray(limitations) || !limitations.every((item) => typeof item === 'string')) return null;
+  return {
+    question: value.question,
+    consensus,
+    disagreements,
+    recommendations,
+    limitations,
+  };
+}
+
 export async function summarizeTelegramPost(
   post: TelegramPost,
   comments: TelegramComment[],
@@ -155,16 +223,8 @@ export async function summarizeTelegramPost(
 
     const content = response.choices[0]?.message?.content;
     if (!content) throw new Error('OPENAI_EMPTY_RESPONSE');
-    const result = JSON.parse(content) as SummaryResult;
-    if (
-      typeof result.question !== 'string' ||
-      !Array.isArray(result.consensus) ||
-      !Array.isArray(result.disagreements) ||
-      !Array.isArray(result.recommendations) ||
-      !Array.isArray(result.limitations)
-    ) {
-      throw new Error('OPENAI_INVALID_RESPONSE');
-    }
+    const result = normalizeSummaryResult(JSON.parse(content), comments);
+    if (!result) throw new Error('OPENAI_INVALID_RESPONSE');
     return result;
   } catch (error) {
     if (error instanceof Error && error.message === 'OPENAI_API_KEY_MISSING') throw error;
