@@ -12,26 +12,19 @@ import {
   MessageCircle,
   Quote,
   RefreshCw,
+  Save,
+  Settings,
   Sparkles,
   Square,
   Trash2,
+  X,
 } from 'lucide-react';
+import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL } from '../shared/summary';
 import { deleteHistory, listHistory, saveHistory } from './lib/history';
+import { isStandaloneAndroid, runtimeApi, type RuntimeSettings } from './lib/runtime';
 import type { HistoryEntry, SummaryItem, SummaryResult, SummarySectionItem, TelegramPreview } from './types';
 
 type BusyAction = 'preview' | 'summary' | null;
-
-async function requestJson<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, {
-    method: body ? 'POST' : 'GET',
-    headers: body ? { 'content-type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-    signal,
-  });
-  const data = (await response.json()) as T & { message?: string };
-  if (!response.ok) throw new Error(data.message || '请求失败。');
-  return data;
-}
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -65,16 +58,31 @@ function App() {
   const [busy, setBusy] = useState<BusyAction>(null);
   const [error, setError] = useState('');
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<RuntimeSettings | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [settingsError, setSettingsError] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_OPENAI_BASE_URL);
+  const [model, setModel] = useState(DEFAULT_OPENAI_MODEL);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     listHistory().then(setHistory).catch(() => undefined);
+    runtimeApi.getSettings().then((nextSettings) => {
+      setSettings(nextSettings);
+      setBaseUrl(nextSettings.baseUrl);
+      setModel(nextSettings.model);
+      if (isStandaloneAndroid && !nextSettings.hasApiKey) setSettingsOpen(true);
+    }).catch(() => {
+      if (isStandaloneAndroid) setSettingsError('无法读取 Android 本地配置，请重启应用后重试。');
+    });
   }, []);
 
   const sourceLabel = useMemo(() => preview ? `${preview.post.channel} / 帖子 ${preview.post.messageId}` : '等待公开帖子', [preview]);
 
   async function summarizePreview(nextPreview: TelegramPreview, requestUrl: string, signal: AbortSignal) {
-    const result = await requestJson<SummaryResult>('/api/summary', { preview: nextPreview }, signal);
+    const result = await runtimeApi.summary(nextPreview, signal);
     setSummary(result);
     const entry: HistoryEntry = {
       id: `${nextPreview.post.channel}-${nextPreview.post.messageId}-${Date.now()}`,
@@ -92,9 +100,64 @@ function App() {
     setActiveHistoryId(entry.id);
   }
 
+  function openSettings() {
+    setSettingsError('');
+    setSettingsOpen(true);
+  }
+
+  async function saveSettingsForm() {
+    const nextBaseUrl = baseUrl.trim().replace(/\/+$/, '');
+    const nextModel = model.trim();
+    const nextApiKey = apiKey.trim();
+    if (!nextApiKey && !settings?.hasApiKey) {
+      setSettingsError('请输入 OpenAI API Key。');
+      return;
+    }
+    try {
+      const parsedBaseUrl = new URL(nextBaseUrl);
+      if (parsedBaseUrl.protocol !== 'https:') throw new Error('OpenAI Base URL 必须使用 HTTPS。');
+      if (!nextModel) throw new Error('请输入模型名称。');
+      setSettingsBusy(true);
+      await runtimeApi.saveSettings({ apiKey: nextApiKey || undefined, baseUrl: nextBaseUrl, model: nextModel });
+      const nextSettings = await runtimeApi.getSettings();
+      setSettings(nextSettings);
+      setApiKey('');
+      setBaseUrl(nextSettings.baseUrl);
+      setModel(nextSettings.model);
+      setSettingsError('');
+      setSettingsOpen(false);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : '保存配置失败，请重试。');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function clearSettings() {
+    try {
+      setSettingsBusy(true);
+      await runtimeApi.clearSettings();
+      const nextSettings = await runtimeApi.getSettings();
+      setSettings(nextSettings);
+      setApiKey('');
+      setBaseUrl(nextSettings.baseUrl);
+      setModel(nextSettings.model);
+      setSettingsError('已清除本地 API Key。');
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : '清除配置失败，请重试。');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
   async function handlePreview() {
     const requestUrl = url.trim();
     if (!requestUrl || busy) return;
+    if (isStandaloneAndroid && !settings?.hasApiKey) {
+      setSettingsError('请先保存 OpenAI API Key。');
+      setSettingsOpen(true);
+      return;
+    }
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setBusy('preview');
@@ -103,7 +166,7 @@ function App() {
     setPreview(null);
     setActiveHistoryId(null);
     try {
-      const nextPreview = await requestJson<TelegramPreview>('/api/telegram/preview', { url: requestUrl }, controller.signal);
+      const nextPreview = await runtimeApi.preview(requestUrl, controller.signal);
       setPreview(nextPreview);
       setBusy('summary');
       await summarizePreview(nextPreview, requestUrl, controller.signal);
@@ -136,7 +199,7 @@ function App() {
     abortControllerRef.current = controller;
     setBusy('preview');
     try {
-      const refreshed = await requestJson<TelegramPreview>('/api/telegram/preview', { url: entry.url }, controller.signal);
+      const refreshed = await runtimeApi.preview(entry.url, controller.signal);
       setPreview(refreshed);
       await saveHistory({ ...entry, comments: refreshed.comments, warnings: refreshed.warnings, fetchedAt: refreshed.fetchedAt });
       setHistory(await listHistory());
@@ -163,8 +226,20 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand"><div className="brand-mark"><Sparkles size={18} /></div><span>ThreadBrief</span><em>TELEGRAM</em></div>
-        <div className="privacy-note"><span className="privacy-dot" />本地运行 · 不保存服务器历史</div>
+        <div className="topbar-actions"><div className="privacy-note"><span className="privacy-dot" />本地运行 · 不保存服务器历史</div>{isStandaloneAndroid && <button className="settings-button" onClick={openSettings} title="打开 Android 配置" aria-label="打开 Android 配置"><Settings size={17} /></button>}</div>
       </header>
+
+      {settingsOpen && isStandaloneAndroid && <div className="settings-backdrop" role="presentation">
+        <section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+          <div className="settings-heading"><div><p className="panel-kicker">ANDROID CONFIGURATION</p><h2 id="settings-title">应用配置</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} title="关闭配置" aria-label="关闭配置"><X size={18} /></button></div>
+          <p className="settings-copy">API Key 只保存于本机的 Android 加密存储中，不会写入网页历史或应用资源。</p>
+          <label className="settings-field"><span>OpenAI API Key {settings?.hasApiKey && <em>已保存，留空表示保持不变</em>}</span><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" placeholder={settings?.hasApiKey ? '已保存的 Key' : 'sk-...'} /></label>
+          <label className="settings-field"><span>OpenAI Base URL</span><input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} inputMode="url" placeholder={DEFAULT_OPENAI_BASE_URL} /></label>
+          <label className="settings-field"><span>模型名称</span><input value={model} onChange={(event) => setModel(event.target.value)} placeholder={DEFAULT_OPENAI_MODEL} /></label>
+          {settingsError && <div className="alert error-alert settings-alert"><AlertTriangle size={16} /><span>{settingsError}</span></div>}
+          <div className="settings-actions"><button className="text-button danger-text" onClick={() => void clearSettings()} disabled={settingsBusy || !settings?.hasApiKey}>清除 Key</button><span /><button className="secondary-button" onClick={() => setSettingsOpen(false)} disabled={settingsBusy}>取消</button><button className="primary-button" onClick={() => void saveSettingsForm()} disabled={settingsBusy}><Save size={16} />{settingsBusy ? '保存中' : '保存配置'}</button></div>
+        </section>
+      </div>}
 
       <main className="page-content">
         <section className="hero-row">

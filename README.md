@@ -15,6 +15,7 @@
 - 自动读取 Windows 系统代理，兼容 FlClash
 - 使用 IndexedDB 保存最近 20 条本地历史记录
 - 不保存服务器端历史，不需要 Telegram 登录或频道权限
+- 支持封装为不依赖电脑后端的 Android APK
 
 ## 运行环境
 
@@ -22,6 +23,8 @@
 - npm
 - 可访问 Telegram 的网络环境
 - OpenAI API Key 或 OpenAI 兼容中转站 Key
+
+Android APK 还需要 Android Studio、JDK 21 或更高版本、Android SDK 和 Gradle 所需组件。
 
 ## 安装
 
@@ -89,6 +92,28 @@ npm run build
 npm run start
 ```
 
+## 构建 Android APK
+
+Android 版不启动 Node 服务。首次打开 APK 后，在右上角配置 API Key、OpenAI Base URL 和模型名称；API Key 会使用 Android Keystore 加密保存。Telegram 网络访问使用手机当前的 VPN 或系统代理。
+
+```powershell
+npm run android:build
+```
+
+个人安装版输出在：
+
+```text
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+安装到已连接的手机：
+
+```powershell
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Android 版只接受 HTTPS 的 OpenAI Base URL；APK 仍需要联网，不能离线抓取 Telegram 或调用模型。
+
 ## 使用流程
 
 1. 输入公开 Telegram 帖子链接，例如 `https://t.me/channel/123`。
@@ -123,7 +148,9 @@ npm test
 ## 项目结构
 
 ```text
-src/       React 前端和本地历史记录
-server/    Telegram 抓取、OpenAI 总结和 HTTP 接口
+src/       React 前端、本地历史记录和运行时适配
+shared/    浏览器与 Node 共用的 Telegram/总结逻辑
+server/    Node 端 Telegram 抓取、OpenAI 总结和 HTTP 接口
+android/   Capacitor Android 工程和原生网络/Keystore 插件
 public/    静态资源
 ```
