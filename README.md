@@ -92,6 +92,12 @@ npm run build
 npm run start
 ```
 
+## 下载 Android APK
+
+debug APK 不再提交到 `main` 分支。请在 GitHub Actions 中手动运行 [Build Android APK](https://github.com/xxf1113/TG_SUM/actions/workflows/android-apk.yml)，完成后从对应运行记录的 Artifacts 下载 `telegram-thread-brief-debug-apk`。正式版本可从 [GitHub Releases](https://github.com/xxf1113/TG_SUM/releases) 下载。
+
+APK 支持 Android 7.0（API 24）及更高版本。首次打开后，在右上角配置 API Key、OpenAI Base URL 和模型名称。
+
 ## 构建 Android APK
 
 Android 版不启动 Node 服务。首次打开 APK 后，在右上角配置 API Key、OpenAI Base URL 和模型名称；API Key 会使用 Android Keystore 加密保存。Telegram 网络访问使用手机当前的 VPN 或系统代理。
@@ -103,13 +109,13 @@ npm run android:build
 个人安装版输出在：
 
 ```text
-android/app/build/outputs/apk/debug/app-debug.apk
+android/app/build/outputs/apk/debug/TG帖子总结.apk
 ```
 
 安装到已连接的手机：
 
 ```powershell
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r "android/app/build/outputs/apk/debug/TG帖子总结.apk"
 ```
 
 Android 版只接受 HTTPS 的 OpenAI Base URL；APK 仍需要联网，不能离线抓取 Telegram 或调用模型。
@@ -143,7 +149,7 @@ npm test
 - Telegram 页面结构变化可能导致抓取失败。
 - 只能获取 Telegram 公开讨论组件中可见的评论。
 - 评论数量较多时，工具最多处理 500 条，并在页面中显示抓取限制。
-- `.env`、依赖目录和构建产物不会提交到 Git 仓库。
+- `.env`、依赖目录、Android 构建目录和本地构建缓存不会提交到 Git 仓库；debug APK 通过 GitHub Actions Artifact 或 GitHub Release 分发。
 
 ## 项目结构
 

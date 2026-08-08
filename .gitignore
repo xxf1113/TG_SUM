@@ -4,3 +4,6 @@ dist/
 .env.*
 !.env.example
 .playwright-cli/
+
+# Android build outputs are generated locally or uploaded by GitHub Actions.
+android/**/build/
