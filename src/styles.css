@@ -58,6 +58,8 @@ h1 span { color: #8dd6bd; }
 .primary-button { min-height: 42px; padding: 0 17px; color: #10201e; background: #8dd6bd; font-size: calc(13px * var(--font-scale)); }
 .primary-button:hover:not(:disabled), .summary-button:hover:not(:disabled) { transform: translateY(-1px); }
 .primary-button:hover:not(:disabled) { background: #aae5ce; }
+.paste-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 0 13px; color: #b9cbc4; border-color: rgba(226, 239, 232, .16); font-size: calc(12px * var(--font-scale)); }
+.paste-button:hover:not(:disabled) { color: #eff8f3; background: rgba(255, 255, 255, .06); }
 .cancel-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 42px; padding: 0 13px; color: #e5b27e; background: rgba(229, 165, 104, .08); border: 1px solid rgba(229, 165, 104, .28); border-radius: 6px; font-size: calc(12px * var(--font-scale)); font-weight: 720; }
 .cancel-button:hover { color: #ffd19f; background: rgba(229, 165, 104, .15); }
 .content-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
