@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ClipboardPaste,
   ChevronDown,
+  ChevronUp,
   Cloud,
   Clock3,
   ExternalLink,
@@ -28,6 +29,7 @@ import { isStandaloneAndroid, runtimeApi, type RuntimeSettings } from './lib/run
 import type { HistoryEntry, SummaryItem, SummaryResult, SummarySectionItem, TelegramPreview } from './types';
 
 type BusyAction = 'preview' | 'summary' | null;
+const HISTORY_PREVIEW_COUNT = 5;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
@@ -77,6 +79,7 @@ function App() {
   const [webDavRemotePath, setWebDavRemotePath] = useState(DEFAULT_WEBDAV_PATH);
   const [webDavUsername, setWebDavUsername] = useState('');
   const [webDavPassword, setWebDavPassword] = useState('');
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -93,6 +96,7 @@ function App() {
   }, []);
 
   const sourceLabel = useMemo(() => preview ? `${preview.post.channel} / 帖子 ${preview.post.messageId}` : '等待公开帖子', [preview]);
+  const visibleHistory = historyExpanded ? history : history.slice(0, HISTORY_PREVIEW_COUNT);
 
   async function summarizePreview(nextPreview: TelegramPreview, requestUrl: string, signal: AbortSignal) {
     const result = await runtimeApi.summary(nextPreview, signal);
@@ -427,7 +431,7 @@ function App() {
           <div className="history-heading"><div><p className="panel-kicker">LOCAL ARCHIVE</p><h2>最近总结</h2></div><div className="history-heading-actions"><span><Clock3 size={15} />{history.length} / {MAX_HISTORY_ENTRIES}</span><button className="secondary-button history-sync-button" onClick={() => void syncWebDav()} disabled={webDavBusy || Boolean(busy)} title="读取并合并 WebDAV 历史"><Cloud size={15} />{webDavBusy ? '同步中' : 'WebDAV 同步'}</button></div></div>
           {webDavStatus && <div className="webdav-status"><Cloud size={15} /><span>{webDavStatus}</span></div>}
           {webDavError && !webDavOpen && <div className="alert error-alert webdav-alert"><AlertTriangle size={16} /><span>{webDavError}</span><button className="icon-button" title="关闭提示" onClick={() => setWebDavError('')}>×</button></div>}
-          {history.length ? <div className="history-list">{history.map((entry) => <div className={`history-item ${activeHistoryId === entry.id ? 'active' : ''}`} key={entry.id} onClick={() => void openHistory(entry)}><div className="history-channel">@{entry.channel}</div><div className="history-question">{entry.summary.question}</div><time>{formatDate(entry.createdAt)}</time><button className="icon-button danger" title="删除历史记录" onClick={(event) => { event.stopPropagation(); void removeHistory(entry.id); }}><Trash2 size={16} /></button></div>)}</div> : <div className="history-empty"><Clock3 size={17} />完成第一次总结后，结果会出现在这里。</div>}
+          {history.length ? <><div className="history-list">{visibleHistory.map((entry) => <div className={`history-item ${activeHistoryId === entry.id ? 'active' : ''}`} key={entry.id} onClick={() => void openHistory(entry)}><div className="history-channel">@{entry.channel}</div><div className="history-question">{entry.summary.question}</div><time>{formatDate(entry.createdAt)}</time><button className="icon-button danger" title="删除历史记录" onClick={(event) => { event.stopPropagation(); void removeHistory(entry.id); }}><Trash2 size={16} /></button></div>)}</div>{history.length > HISTORY_PREVIEW_COUNT && <button className="history-expand-button" onClick={() => setHistoryExpanded((expanded) => !expanded)} aria-expanded={historyExpanded}>{historyExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}{historyExpanded ? '收起' : '展开'}<span>{historyExpanded ? '' : `（还有 ${history.length - HISTORY_PREVIEW_COUNT} 条）`}</span></button>}</> : <div className="history-empty"><Clock3 size={17} />完成第一次总结后，结果会出现在这里。</div>}
         </section>
       </main>
       <footer className="footer"><span>ThreadBrief</span><span>仅处理公开 Telegram 页面 · 由 OpenAI 生成总结</span><button className="refresh-button" title="重新读取本地历史" onClick={() => listHistory().then(setHistory)}><RefreshCw size={14} /></button></footer>

@@ -17,7 +17,7 @@ function entry(id: string, createdAt: string): HistoryEntry {
 }
 
 describe('WebDAV history archive', () => {
-  it('merges by id, keeps the newer entry, and caps at 100 records', () => {
+  it('merges by id, keeps the newer entry, and caps at 500 records', () => {
     const local = Array.from({ length: MAX_HISTORY_ENTRIES }, (_, index) => entry(String(index), `2026-08-${String((index % 9) + 1).padStart(2, '0')}T00:00:00.000Z`));
     const remote = [entry('0', '2027-01-01T00:00:00.000Z'), entry('new', '2028-01-01T00:00:00.000Z')];
     const merged = mergeHistory(local, remote);

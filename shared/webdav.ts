@@ -6,7 +6,7 @@ import type {
   TelegramPost,
 } from './types';
 
-export const MAX_HISTORY_ENTRIES = 100;
+export const MAX_HISTORY_ENTRIES = 500;
 export const DEFAULT_WEBDAV_PATH = 'threadbrief/history.json';
 export const MAX_WEBDAV_BYTES = 20_000_000;
 

@@ -13,8 +13,8 @@
 - 显示评论抓取数量与 Telegram 标记数量的差异
 - 支持 OpenAI 官方 API 和 OpenAI 格式兼容中转站
 - 自动读取 Windows 系统代理，兼容 FlClash
-- 使用 IndexedDB 保存最近 100 条本地历史记录
-- 支持手动 WebDAV 双向同步最近 100 条总结记录，不同步 API Key
+- 使用 IndexedDB 保存最近 500 条本地历史记录，默认显示最近 5 条
+- 支持手动 WebDAV 双向同步最近 500 条总结记录，不同步 API Key
 - 不保存服务器端历史，不需要 Telegram 登录或频道权限
 - 支持封装为不依赖电脑后端的 Android APK
 
@@ -130,7 +130,7 @@ Android 版只接受 HTTPS 的 OpenAI Base URL；APK 仍需要联网，不能离
 
 ## WebDAV 同步
 
-点击顶部云朵按钮配置 WebDAV 地址、远程文件路径、用户名和密码，再在“最近总结”区域点击“WebDAV 同步”。同步会读取远程历史，与本地最近 100 条记录按记录 ID 合并后重新上传。
+点击顶部云朵按钮配置 WebDAV 地址、远程文件路径、用户名和密码，再在“最近总结”区域点击“WebDAV 同步”。同步会读取远程历史，与本地最近 500 条记录按记录 ID 合并后重新上传。
 
 WebDAV 文件默认为 `threadbrief/history.json`，只包含帖子、评论和总结结果，不包含 API Key、OpenAI 配置或 WebDAV 密码。浏览器仅在当前站点本地保存 WebDAV 配置，Android 使用加密存储保存密码。
 

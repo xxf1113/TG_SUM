@@ -151,6 +151,9 @@ h1 span { color: #8dd6bd; }
 .webdav-status { display: flex; align-items: center; gap: 7px; margin-top: 14px; color: #8fc8b5; font-size: calc(11px * var(--font-scale)); }
 .webdav-alert { margin-top: 14px; margin-bottom: 0; }
 .history-list { display: grid; gap: 8px; margin-top: 16px; }
+.history-expand-button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 2px; margin-top: 13px; color: #8fc8b5; background: transparent; border: 0; font-size: calc(12px * var(--font-scale)); font-weight: 700; }
+.history-expand-button:hover { color: #c0ebd8; }
+.history-expand-button span { color: #718a82; font-weight: 500; }
 .history-item { display: grid; grid-template-columns: 160px minmax(0, 1fr) 150px 30px; align-items: center; gap: 15px; min-height: 55px; padding: 9px 12px; color: #a8bab3; background: rgba(18, 30, 31, .65); border: 1px solid transparent; border-radius: 6px; transition: border-color .18s ease, background .18s ease; }
 .history-item:hover, .history-item.active { background: rgba(24, 42, 41, .8); border-color: rgba(141, 214, 189, .24); }
 .history-channel { color: #8cc9b5; font-size: calc(12px * var(--font-scale)); }
