@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  ClipboardPaste,
   ChevronDown,
   Clock3,
   ExternalLink,
@@ -182,6 +183,20 @@ function App() {
     abortControllerRef.current?.abort();
   }
 
+  async function pasteUrl() {
+    try {
+      const pastedUrl = (await navigator.clipboard.readText()).trim();
+      if (!pastedUrl) {
+        setError('剪贴板没有可粘贴的内容。');
+        return;
+      }
+      setUrl(pastedUrl);
+      setError('');
+    } catch {
+      setError('无法读取剪贴板，请允许剪贴板权限后重试。');
+    }
+  }
+
   async function openHistory(entry: HistoryEntry) {
     if (busy) return;
     setUrl(entry.url);
@@ -254,7 +269,7 @@ function App() {
         <section className="input-bar" aria-label="Telegram 链接输入">
           <div className="input-icon"><Link2 size={19} /></div>
           <input value={url} onChange={(event) => setUrl(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void handlePreview(); }} placeholder="https://t.me/channel/123" aria-label="Telegram 帖子链接" />
-          {busy ? <><button className="primary-button progress-button" disabled><LoaderCircle className="spin" size={17} />{busy === 'preview' ? '正在抓取' : '正在总结'}</button><button className="cancel-button" onClick={cancelRequest} title="取消当前请求"><Square size={15} />取消</button></> : <button className="primary-button" onClick={() => void handlePreview()} disabled={!url.trim()}><ArrowRight size={17} />抓取并总结</button>}
+          {busy ? <><button className="primary-button progress-button" disabled><LoaderCircle className="spin" size={17} />{busy === 'preview' ? '正在抓取' : '正在总结'}</button><button className="cancel-button" onClick={cancelRequest} title="取消当前请求"><Square size={15} />取消</button></> : <><button className="secondary-button paste-button" onClick={() => void pasteUrl()} title="从剪贴板粘贴"><ClipboardPaste size={17} />粘贴</button><button className="primary-button" onClick={() => void handlePreview()} disabled={!url.trim()}><ArrowRight size={17} />抓取并总结</button></>}
         </section>
 
         {error && <div className="alert error-alert"><AlertTriangle size={18} /><span>{error}</span><button className="icon-button" title="关闭提示" onClick={() => setError('')}>×</button></div>}
