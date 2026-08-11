@@ -352,7 +352,7 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand"><div className="brand-mark"><Sparkles size={18} /></div><span>ThreadBrief</span><em>TELEGRAM</em></div>
-        <div className="topbar-actions"><div className="privacy-note"><span className="privacy-dot" />本地运行 · 不保存服务器历史</div><a className="github-button" href="https://github.com/xxf1113/TG_SUM" target="_blank" rel="noreferrer" title="打开 GitHub 项目" aria-label="打开 GitHub 项目"><Github size={16} />GitHub</a><button className="settings-button" onClick={() => void openWebDavSettings()} title="打开 WebDAV 配置" aria-label="打开 WebDAV 配置"><Cloud size={17} /></button>{isStandaloneAndroid && <button className="settings-button" onClick={openSettings} title="打开 Android 配置" aria-label="打开 Android 配置"><Settings size={17} /></button>}</div>
+        <div className="topbar-actions"><a className="github-button" href="https://github.com/xxf1113/TG_SUM" target="_blank" rel="noreferrer" title="打开 GitHub 项目" aria-label="打开 GitHub 项目"><Github size={16} />GitHub</a><button className="settings-button" onClick={() => void openWebDavSettings()} title="打开 WebDAV 配置" aria-label="打开 WebDAV 配置"><Cloud size={17} /></button>{isStandaloneAndroid && <button className="settings-button" onClick={openSettings} title="打开 Android 配置" aria-label="打开 Android 配置"><Settings size={17} /></button>}</div>
       </header>
 
       {webDavOpen && <div className="settings-backdrop" role="presentation">
