@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ClipboardPaste,
   ChevronDown,
+  Cloud,
   Clock3,
   ExternalLink,
   FileText,
@@ -21,7 +22,8 @@ import {
   X,
 } from 'lucide-react';
 import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL } from '../shared/summary';
-import { deleteHistory, listHistory, saveHistory } from './lib/history';
+import { DEFAULT_WEBDAV_PATH, MAX_HISTORY_ENTRIES, WebDavError, buildWebDavFileUrl, mergeHistory, normalizeWebDavPath, normalizeWebDavServerUrl, parseHistoryArchive, serializeHistory, webDavStatusError, type WebDavSettings } from '../shared/webdav';
+import { deleteHistory, listHistory, replaceHistory, saveHistory } from './lib/history';
 import { isStandaloneAndroid, runtimeApi, type RuntimeSettings } from './lib/runtime';
 import type { HistoryEntry, SummaryItem, SummaryResult, SummarySectionItem, TelegramPreview } from './types';
 
@@ -66,6 +68,15 @@ function App() {
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(DEFAULT_OPENAI_BASE_URL);
   const [model, setModel] = useState(DEFAULT_OPENAI_MODEL);
+  const [webDavSettings, setWebDavSettings] = useState<WebDavSettings | null>(null);
+  const [webDavOpen, setWebDavOpen] = useState(false);
+  const [webDavBusy, setWebDavBusy] = useState(false);
+  const [webDavError, setWebDavError] = useState('');
+  const [webDavStatus, setWebDavStatus] = useState('');
+  const [webDavServerUrl, setWebDavServerUrl] = useState('');
+  const [webDavRemotePath, setWebDavRemotePath] = useState(DEFAULT_WEBDAV_PATH);
+  const [webDavUsername, setWebDavUsername] = useState('');
+  const [webDavPassword, setWebDavPassword] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -78,6 +89,7 @@ function App() {
     }).catch(() => {
       if (isStandaloneAndroid) setSettingsError('无法读取 Android 本地配置，请重启应用后重试。');
     });
+    runtimeApi.getWebDavSettings().then(setWebDavSettings).catch(() => undefined);
   }, []);
 
   const sourceLabel = useMemo(() => preview ? `${preview.post.channel} / 帖子 ${preview.post.messageId}` : '等待公开帖子', [preview]);
@@ -148,6 +160,100 @@ function App() {
       setSettingsError(err instanceof Error ? err.message : '清除配置失败，请重试。');
     } finally {
       setSettingsBusy(false);
+    }
+  }
+
+  async function openWebDavSettings() {
+    setWebDavError('');
+    try {
+      const nextSettings = await runtimeApi.getWebDavSettings();
+      setWebDavSettings(nextSettings);
+      setWebDavServerUrl(nextSettings.serverUrl);
+      setWebDavRemotePath(nextSettings.remotePath || DEFAULT_WEBDAV_PATH);
+      setWebDavUsername(nextSettings.username);
+      setWebDavPassword('');
+      setWebDavOpen(true);
+    } catch (err) {
+      setWebDavError(err instanceof Error ? err.message : '无法读取 WebDAV 配置。');
+      setWebDavOpen(true);
+    }
+  }
+
+  async function saveWebDavForm() {
+    try {
+      const nextServerUrl = normalizeWebDavServerUrl(webDavServerUrl);
+      const nextRemotePath = normalizeWebDavPath(webDavRemotePath);
+      buildWebDavFileUrl(nextServerUrl, nextRemotePath);
+      if (!webDavUsername.trim()) throw new WebDavError('请输入 WebDAV 用户名。', 'WEBDAV_INVALID_SETTINGS');
+      if (!webDavPassword.trim() && !webDavSettings?.hasPassword) throw new WebDavError('请输入 WebDAV 密码。', 'WEBDAV_INVALID_SETTINGS');
+      setWebDavBusy(true);
+      await runtimeApi.saveWebDavSettings({ serverUrl: nextServerUrl, remotePath: nextRemotePath, username: webDavUsername.trim(), password: webDavPassword.trim() || undefined });
+      const nextSettings = await runtimeApi.getWebDavSettings();
+      setWebDavSettings(nextSettings);
+      setWebDavPassword('');
+      setWebDavError('');
+      setWebDavOpen(false);
+      setWebDavStatus('WebDAV 配置已保存。');
+    } catch (err) {
+      setWebDavError(err instanceof Error ? err.message : '保存 WebDAV 配置失败，请重试。');
+    } finally {
+      setWebDavBusy(false);
+    }
+  }
+
+  async function clearWebDav() {
+    try {
+      setWebDavBusy(true);
+      await runtimeApi.clearWebDavSettings();
+      const nextSettings = await runtimeApi.getWebDavSettings();
+      setWebDavSettings(nextSettings);
+      setWebDavServerUrl('');
+      setWebDavRemotePath(DEFAULT_WEBDAV_PATH);
+      setWebDavUsername('');
+      setWebDavPassword('');
+      setWebDavError('');
+      setWebDavStatus('WebDAV 配置已清除。');
+    } catch (err) {
+      setWebDavError(err instanceof Error ? err.message : '清除 WebDAV 配置失败，请重试。');
+    } finally {
+      setWebDavBusy(false);
+    }
+  }
+
+  async function syncWebDav() {
+    if (webDavBusy || busy) return;
+    const currentSettings = webDavSettings ?? await runtimeApi.getWebDavSettings().catch(() => null);
+    if (!currentSettings?.serverUrl || !currentSettings.hasPassword) {
+      await openWebDavSettings();
+      return;
+    }
+    const controller = new AbortController();
+    setWebDavBusy(true);
+    setWebDavError('');
+    setWebDavStatus('正在读取 WebDAV 历史…');
+    try {
+      const remoteResponse = await runtimeApi.requestWebDav({ method: 'GET' }, controller.signal);
+      let remoteEntries: HistoryEntry[] = [];
+      let invalidEntries = 0;
+      if (remoteResponse.status !== 404) {
+        if (remoteResponse.status < 200 || remoteResponse.status >= 300) throw webDavStatusError(remoteResponse.status);
+        const parsed = parseHistoryArchive(remoteResponse.body);
+        remoteEntries = parsed.entries;
+        invalidEntries = parsed.invalidEntries;
+      }
+      const localEntries = await listHistory();
+      const mergedEntries = mergeHistory(localEntries, remoteEntries);
+      setWebDavStatus('正在上传合并后的历史…');
+      const uploadResponse = await runtimeApi.requestWebDav({ method: 'PUT', body: serializeHistory(mergedEntries) }, controller.signal);
+      if (uploadResponse.status < 200 || uploadResponse.status >= 300) throw webDavStatusError(uploadResponse.status);
+      await replaceHistory(mergedEntries);
+      setHistory(await listHistory());
+      setWebDavStatus(`同步完成：共 ${mergedEntries.length} 条${invalidEntries ? `，忽略 ${invalidEntries} 条无效远程记录` : ''}。`);
+    } catch (err) {
+      setWebDavError(err instanceof Error ? err.message : 'WebDAV 同步失败，请稍后重试。');
+      setWebDavStatus('');
+    } finally {
+      setWebDavBusy(false);
     }
   }
 
@@ -241,8 +347,21 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand"><div className="brand-mark"><Sparkles size={18} /></div><span>ThreadBrief</span><em>TELEGRAM</em></div>
-        <div className="topbar-actions"><div className="privacy-note"><span className="privacy-dot" />本地运行 · 不保存服务器历史</div>{isStandaloneAndroid && <button className="settings-button" onClick={openSettings} title="打开 Android 配置" aria-label="打开 Android 配置"><Settings size={17} /></button>}</div>
+        <div className="topbar-actions"><div className="privacy-note"><span className="privacy-dot" />本地运行 · 不保存服务器历史</div><button className="settings-button" onClick={() => void openWebDavSettings()} title="打开 WebDAV 配置" aria-label="打开 WebDAV 配置"><Cloud size={17} /></button>{isStandaloneAndroid && <button className="settings-button" onClick={openSettings} title="打开 Android 配置" aria-label="打开 Android 配置"><Settings size={17} /></button>}</div>
       </header>
+
+      {webDavOpen && <div className="settings-backdrop" role="presentation">
+        <section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="webdav-title">
+          <div className="settings-heading"><div><p className="panel-kicker">WEBDAV SYNC</p><h2 id="webdav-title">WebDAV 同步</h2></div><button className="icon-button" onClick={() => setWebDavOpen(false)} title="关闭 WebDAV 配置" aria-label="关闭 WebDAV 配置"><X size={18} /></button></div>
+          <p className="settings-copy">只同步“最近总结”中的最近 {MAX_HISTORY_ENTRIES} 条帖子记录。API Key、OpenAI 配置和 WebDAV 密码不会写入远程文件。</p>
+          <label className="settings-field"><span>WebDAV 地址</span><input value={webDavServerUrl} onChange={(event) => setWebDavServerUrl(event.target.value)} inputMode="url" placeholder="https://dav.example.com/remote.php/dav/files/user" /></label>
+          <label className="settings-field"><span>远程文件路径</span><input value={webDavRemotePath} onChange={(event) => setWebDavRemotePath(event.target.value)} placeholder={DEFAULT_WEBDAV_PATH} /></label>
+          <label className="settings-field"><span>用户名</span><input value={webDavUsername} onChange={(event) => setWebDavUsername(event.target.value)} autoComplete="username" /></label>
+          <label className="settings-field"><span>密码 {webDavSettings?.hasPassword && <em>已保存，留空表示保持不变</em>}</span><input type="password" value={webDavPassword} onChange={(event) => setWebDavPassword(event.target.value)} autoComplete="current-password" placeholder={webDavSettings?.hasPassword ? '已保存的密码' : '请输入 WebDAV 密码'} /></label>
+          {webDavError && <div className="alert error-alert settings-alert"><AlertTriangle size={16} /><span>{webDavError}</span></div>}
+          <div className="settings-actions"><button className="text-button danger-text" onClick={() => void clearWebDav()} disabled={webDavBusy || !webDavSettings?.serverUrl}>清除配置</button><span /><button className="secondary-button" onClick={() => setWebDavOpen(false)} disabled={webDavBusy}>取消</button><button className="primary-button" onClick={() => void saveWebDavForm()} disabled={webDavBusy}><Save size={16} />{webDavBusy ? '保存中' : '保存配置'}</button></div>
+        </section>
+      </div>}
 
       {settingsOpen && isStandaloneAndroid && <div className="settings-backdrop" role="presentation">
         <section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -305,7 +424,9 @@ function App() {
         </div>
 
         <section className="history-section">
-          <div className="history-heading"><div><p className="panel-kicker">LOCAL ARCHIVE</p><h2>最近总结</h2></div><span><Clock3 size={15} />{history.length} / 20</span></div>
+          <div className="history-heading"><div><p className="panel-kicker">LOCAL ARCHIVE</p><h2>最近总结</h2></div><div className="history-heading-actions"><span><Clock3 size={15} />{history.length} / {MAX_HISTORY_ENTRIES}</span><button className="secondary-button history-sync-button" onClick={() => void syncWebDav()} disabled={webDavBusy || Boolean(busy)} title="读取并合并 WebDAV 历史"><Cloud size={15} />{webDavBusy ? '同步中' : 'WebDAV 同步'}</button></div></div>
+          {webDavStatus && <div className="webdav-status"><Cloud size={15} /><span>{webDavStatus}</span></div>}
+          {webDavError && !webDavOpen && <div className="alert error-alert webdav-alert"><AlertTriangle size={16} /><span>{webDavError}</span><button className="icon-button" title="关闭提示" onClick={() => setWebDavError('')}>×</button></div>}
           {history.length ? <div className="history-list">{history.map((entry) => <div className={`history-item ${activeHistoryId === entry.id ? 'active' : ''}`} key={entry.id} onClick={() => void openHistory(entry)}><div className="history-channel">@{entry.channel}</div><div className="history-question">{entry.summary.question}</div><time>{formatDate(entry.createdAt)}</time><button className="icon-button danger" title="删除历史记录" onClick={(event) => { event.stopPropagation(); void removeHistory(entry.id); }}><Trash2 size={16} /></button></div>)}</div> : <div className="history-empty"><Clock3 size={17} />完成第一次总结后，结果会出现在这里。</div>}
         </section>
       </main>

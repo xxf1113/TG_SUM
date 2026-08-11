@@ -13,7 +13,8 @@
 - 显示评论抓取数量与 Telegram 标记数量的差异
 - 支持 OpenAI 官方 API 和 OpenAI 格式兼容中转站
 - 自动读取 Windows 系统代理，兼容 FlClash
-- 使用 IndexedDB 保存最近 20 条本地历史记录
+- 使用 IndexedDB 保存最近 100 条本地历史记录
+- 支持手动 WebDAV 双向同步最近 100 条总结记录，不同步 API Key
 - 不保存服务器端历史，不需要 Telegram 登录或频道权限
 - 支持封装为不依赖电脑后端的 Android APK
 
@@ -127,6 +128,12 @@ Android 版只接受 HTTPS 的 OpenAI Base URL；APK 仍需要联网，不能离
 3. 工具会先抓取主贴和公开评论，再自动生成总结。
 4. 结果会保存到当前浏览器的本地历史记录中。
 
+## WebDAV 同步
+
+点击顶部云朵按钮配置 WebDAV 地址、远程文件路径、用户名和密码，再在“最近总结”区域点击“WebDAV 同步”。同步会读取远程历史，与本地最近 100 条记录按记录 ID 合并后重新上传。
+
+WebDAV 文件默认为 `threadbrief/history.json`，只包含帖子、评论和总结结果，不包含 API Key、OpenAI 配置或 WebDAV 密码。浏览器仅在当前站点本地保存 WebDAV 配置，Android 使用加密存储保存密码。
+
 ## 测试
 
 ```powershell
@@ -142,6 +149,7 @@ npm test
 - `GET /api/health`：健康检查
 - `POST /api/telegram/preview`：抓取公开帖子和讨论评论
 - `POST /api/summary`：调用 OpenAI 兼容 Chat Completions 接口生成总结
+- `POST /api/webdav`：代理 WebDAV 历史文件读取和写入，不保存同步配置
 
 ## 限制
 

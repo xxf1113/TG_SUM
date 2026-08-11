@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { SummaryMessage } from '../../shared/summary';
+import type { WebDavMethod, WebDavSettings } from '../../shared/webdav';
 
 export interface NativeSettings {
   hasApiKey: boolean;
@@ -8,6 +9,11 @@ export interface NativeSettings {
 }
 
 export interface NativeHtmlResponse {
+  status: number;
+  body: string;
+}
+
+export interface NativeWebDavResponse {
   status: number;
   body: string;
 }
@@ -24,6 +30,10 @@ interface ThreadBriefNativePlugin {
   getSettings(): Promise<NativeSettings>;
   saveSettings(options: { apiKey?: string; baseUrl: string; model: string }): Promise<void>;
   clearSettings(): Promise<void>;
+  getWebDavSettings(): Promise<WebDavSettings>;
+  saveWebDavSettings(options: { serverUrl: string; remotePath: string; username: string; password?: string }): Promise<void>;
+  clearWebDavSettings(): Promise<void>;
+  requestWebDav(options: { method: WebDavMethod; body?: string; requestId: string }): Promise<NativeWebDavResponse>;
   cancel(options: { requestId: string }): Promise<void>;
 }
 
@@ -101,4 +111,20 @@ export function saveNativeSettings(options: { apiKey?: string; baseUrl: string; 
 
 export function clearNativeSettings(): Promise<void> {
   return ThreadBriefNative.clearSettings();
+}
+
+export function getNativeWebDavSettings(): Promise<WebDavSettings> {
+  return ThreadBriefNative.getWebDavSettings();
+}
+
+export function saveNativeWebDavSettings(options: { serverUrl: string; remotePath: string; username: string; password?: string }): Promise<void> {
+  return ThreadBriefNative.saveWebDavSettings(options);
+}
+
+export function clearNativeWebDavSettings(): Promise<void> {
+  return ThreadBriefNative.clearWebDavSettings();
+}
+
+export function requestNativeWebDav(options: Omit<Parameters<ThreadBriefNativePlugin['requestWebDav']>[0], 'requestId'>, signal?: AbortSignal): Promise<NativeWebDavResponse> {
+  return callNative((requestId) => ThreadBriefNative.requestWebDav({ ...options, requestId }), signal);
 }

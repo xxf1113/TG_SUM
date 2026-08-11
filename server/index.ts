@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { loadEnvFile } from 'node:process';
 import { fetchTelegramPreview, TelegramFetchError } from './telegram';
 import { OpenAISummaryError, summarizeTelegramPost } from './summary';
+import { proxyWebDav } from './webdav';
+import { MAX_WEBDAV_BYTES, WebDavError } from '../shared/webdav';
 import type { TelegramPreview } from './types';
 
 try {
@@ -55,10 +57,10 @@ function createRequestSignal(request: IncomingMessage, response: ServerResponse)
   };
 }
 
-async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJson(request: IncomingMessage, maxBytes = 2_000_000): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.from(chunk));
-  if (Buffer.concat(chunks).length > 2_000_000) throw new Error('REQUEST_TOO_LARGE');
+  if (Buffer.concat(chunks).length > maxBytes) throw new Error('REQUEST_TOO_LARGE');
   const value = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
   if (!value || typeof value !== 'object') throw new Error('INVALID_JSON');
   return value as Record<string, unknown>;
@@ -83,6 +85,13 @@ function errorMessage(error: unknown): { status: number; message: string } {
       OPENAI_REQUEST_FAILED: 'OpenAI 请求失败，请检查中转站地址、网络和模型配置。',
     };
     return { status: error.code === 'OPENAI_TIMEOUT' ? 504 : error.code === 'OPENAI_CANCELLED' ? 499 : 502, message: messages[error.code] || messages.OPENAI_REQUEST_FAILED };
+  }
+  if (error instanceof WebDavError) {
+    if (error.code === 'WEBDAV_AUTH_FAILED') return { status: 401, message: error.message };
+    if (error.code === 'WEBDAV_TIMEOUT') return { status: 504, message: error.message };
+    if (error.code === 'WEBDAV_RESPONSE_TOO_LARGE') return { status: 413, message: error.message };
+    if (error.code === 'WEBDAV_INVALID_SETTINGS') return { status: 400, message: error.message };
+    return { status: 502, message: error.message };
   }
   if (error instanceof Error) {
     if (error.message === 'OPENAI_API_KEY_MISSING') return { status: 503, message: '服务端尚未配置 OPENAI_API_KEY。' };
@@ -140,6 +149,22 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       if (typeof body.url !== 'string') throw new TelegramFetchError('请提供 Telegram 帖子链接。');
       json(response, 200, await fetchTelegramPreview(body.url, requestContext.signal), request);
+      return;
+    }
+    if (request.url === '/api/webdav' && request.method === 'POST') {
+      const body = await readJson(request, MAX_WEBDAV_BYTES + 256_000);
+      if (body.method !== 'GET' && body.method !== 'PUT' || typeof body.serverUrl !== 'string' || typeof body.remotePath !== 'string' || typeof body.username !== 'string' || typeof body.password !== 'string') {
+        throw new WebDavError('WebDAV 请求参数无效。', 'WEBDAV_INVALID_SETTINGS');
+      }
+      const result = await proxyWebDav({
+        method: body.method,
+        serverUrl: body.serverUrl,
+        remotePath: body.remotePath,
+        username: body.username,
+        password: body.password,
+        body: typeof body.body === 'string' ? body.body : undefined,
+      }, requestContext.signal);
+      json(response, 200, result, request);
       return;
     }
     if (request.url === '/api/summary' && request.method === 'POST') {

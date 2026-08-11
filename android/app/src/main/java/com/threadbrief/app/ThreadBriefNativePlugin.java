@@ -43,16 +43,25 @@ public class ThreadBriefNativePlugin extends Plugin {
     private static final String PREFS_NAME = "threadbrief_settings";
     private static final String API_KEY_CIPHERTEXT = "api_key_ciphertext";
     private static final String API_KEY_IV = "api_key_iv";
+    private static final String WEBDAV_SERVER_URL = "webdav_server_url";
+    private static final String WEBDAV_REMOTE_PATH = "webdav_remote_path";
+    private static final String WEBDAV_USERNAME = "webdav_username";
+    private static final String WEBDAV_PASSWORD_CIPHERTEXT = "webdav_password_ciphertext";
+    private static final String WEBDAV_PASSWORD_IV = "webdav_password_iv";
     private static final String BASE_URL = "base_url";
     private static final String MODEL = "model";
     private static final String KEY_ALIAS = "threadbrief_api_key";
+    private static final String WEBDAV_KEY_ALIAS = "threadbrief_webdav";
     private static final String KEYSTORE_NAME = "AndroidKeyStore";
     private static final String DEFAULT_BASE_URL = "https://api.openai.com/v1";
     private static final String DEFAULT_MODEL = "gpt-5-mini";
+    private static final String DEFAULT_WEBDAV_PATH = "threadbrief/history.json";
     private static final int REQUEST_TIMEOUT_MS = 15_000;
     private static final int OPENAI_TIMEOUT_MS = 60_000;
+    private static final int WEBDAV_TIMEOUT_MS = 30_000;
     private static final int MAX_HTML_BYTES = 10 * 1024 * 1024;
     private static final int MAX_JSON_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_WEBDAV_BYTES = 20 * 1024 * 1024;
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final ConcurrentHashMap<String, Future<?>> tasks = new ConcurrentHashMap<>();
@@ -142,6 +151,72 @@ public class ThreadBriefNativePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getWebDavSettings(PluginCall call) {
+        try {
+            SharedPreferences preferences = preferences();
+            JSObject result = new JSObject();
+            result.put("serverUrl", preferences.getString(WEBDAV_SERVER_URL, ""));
+            result.put("remotePath", preferences.getString(WEBDAV_REMOTE_PATH, DEFAULT_WEBDAV_PATH));
+            result.put("username", preferences.getString(WEBDAV_USERNAME, ""));
+            result.put("hasPassword", hasWebDavPassword());
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject("无法读取 WebDAV 配置。", "WEBDAV_SETTINGS_READ_FAILED");
+        }
+    }
+
+    @PluginMethod
+    public void saveWebDavSettings(PluginCall call) {
+        try {
+            String serverUrl = normalizeWebDavUrl(call.getString("serverUrl"));
+            String remotePath = normalizeWebDavPath(call.getString("remotePath"));
+            String username = call.getString("username");
+            if (username == null || username.trim().isEmpty()) throw new NativeRequestException("请输入 WebDAV 用户名。", "WEBDAV_INVALID_SETTINGS");
+            String password = call.getString("password");
+            SharedPreferences.Editor editor = preferences().edit()
+                    .putString(WEBDAV_SERVER_URL, serverUrl)
+                    .putString(WEBDAV_REMOTE_PATH, remotePath)
+                    .putString(WEBDAV_USERNAME, username.trim());
+            if (password != null && !password.trim().isEmpty()) {
+                encryptWebDavPassword(password.trim(), editor);
+            } else if (!hasWebDavPassword()) {
+                throw new NativeRequestException("请输入 WebDAV 密码。", "WEBDAV_INVALID_SETTINGS");
+            }
+            if (!editor.commit()) throw new NativeRequestException("无法保存 WebDAV 配置。", "WEBDAV_SETTINGS_WRITE_FAILED");
+            call.resolve();
+        } catch (NativeRequestException error) {
+            call.reject(error.getMessage(), error.code);
+        } catch (Exception error) {
+            call.reject("无法保存 WebDAV 配置。", "WEBDAV_SETTINGS_WRITE_FAILED");
+        }
+    }
+
+    @PluginMethod
+    public void clearWebDavSettings(PluginCall call) {
+        try {
+            SharedPreferences.Editor editor = preferences().edit()
+                    .remove(WEBDAV_SERVER_URL)
+                    .remove(WEBDAV_REMOTE_PATH)
+                    .remove(WEBDAV_USERNAME)
+                    .remove(WEBDAV_PASSWORD_CIPHERTEXT)
+                    .remove(WEBDAV_PASSWORD_IV);
+            if (!editor.commit()) throw new NativeRequestException("无法清除 WebDAV 配置。", "WEBDAV_SETTINGS_WRITE_FAILED");
+            deleteKeyAlias(WEBDAV_KEY_ALIAS);
+            call.resolve();
+        } catch (NativeRequestException error) {
+            call.reject(error.getMessage(), error.code);
+        } catch (Exception error) {
+            call.reject("无法清除 WebDAV 配置。", "WEBDAV_SETTINGS_WRITE_FAILED");
+        }
+    }
+
+    @PluginMethod
+    public void requestWebDav(PluginCall call) {
+        String requestId = requestId(call);
+        submit(requestId, call, () -> requestWebDav(call, requestId));
+    }
+
+    @PluginMethod
     public void cancel(PluginCall call) {
         String requestId = call.getString("requestId");
         if (requestId != null) {
@@ -195,6 +270,45 @@ public class ThreadBriefNativePlugin extends Plugin {
             JSObject result = new JSObject();
             result.put("status", status);
             result.put("body", body);
+            return result;
+        } finally {
+            connection.disconnect();
+            connections.remove(requestId);
+        }
+    }
+
+    private JSObject requestWebDav(PluginCall call, String requestId) throws Exception {
+        JSONObject input = call.getData();
+        if (input == null) throw new NativeRequestException("WebDAV 请求参数无效。", "WEBDAV_INVALID_SETTINGS");
+        String method = input.optString("method", "").toUpperCase(Locale.ROOT);
+        if (!"GET".equals(method) && !"PUT".equals(method)) throw new NativeRequestException("WebDAV 请求方法无效。", "WEBDAV_INVALID_SETTINGS");
+        SharedPreferences preferences = preferences();
+        String serverUrl = normalizeWebDavUrl(preferences.getString(WEBDAV_SERVER_URL, ""));
+        String remotePath = normalizeWebDavPath(preferences.getString(WEBDAV_REMOTE_PATH, DEFAULT_WEBDAV_PATH));
+        String username = preferences.getString(WEBDAV_USERNAME, "");
+        String password = readWebDavPassword();
+        String body = input.optString("body", null);
+        if ("PUT".equals(method) && (body == null || body.getBytes(StandardCharsets.UTF_8).length > MAX_WEBDAV_BYTES)) throw new NativeRequestException("WebDAV 历史文件过大。", "WEBDAV_RESPONSE_TOO_LARGE");
+
+        URL url = buildWebDavUrl(serverUrl, remotePath);
+        HttpURLConnection connection = openConnection(url, requestId, WEBDAV_TIMEOUT_MS);
+        try {
+            connection.setRequestMethod(method);
+            connection.setRequestProperty("Accept", "application/json, text/plain, */*");
+            connection.setRequestProperty("Authorization", "Basic " + Base64.encodeToString((username.trim() + ":" + password).getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
+            if ("PUT".equals(method)) {
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                try (OutputStream output = connection.getOutputStream()) {
+                    output.write(body.getBytes(StandardCharsets.UTF_8));
+                }
+            }
+            int status = connection.getResponseCode();
+            InputStream inputStream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+            String responseBody = inputStream == null ? "" : readBody(inputStream, MAX_WEBDAV_BYTES);
+            JSObject result = new JSObject();
+            result.put("status", status);
+            result.put("body", responseBody);
             return result;
         } finally {
             connection.disconnect();
@@ -305,11 +419,40 @@ public class ThreadBriefNativePlugin extends Plugin {
         return uri.toURL();
     }
 
+    private URL validateHttpUrl(String value) throws Exception {
+        URI uri = URI.create(value);
+        if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) || uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null) {
+            throw new NativeRequestException("WebDAV 地址必须是有效的 HTTP 或 HTTPS 地址。", "WEBDAV_INVALID_SETTINGS");
+        }
+        return uri.toURL();
+    }
+
     private String normalizeBaseUrl(String value) throws Exception {
         if (value == null || value.trim().isEmpty()) value = DEFAULT_BASE_URL;
         String normalized = value.trim().replaceAll("/+$", "");
         validateHttpsUrl(normalized);
         return normalized;
+    }
+
+    private String normalizeWebDavUrl(String value) throws Exception {
+        if (value == null || value.trim().isEmpty()) throw new NativeRequestException("请输入 WebDAV 地址。", "WEBDAV_INVALID_SETTINGS");
+        String normalized = value.trim().replaceAll("/+$", "");
+        validateHttpUrl(normalized);
+        return normalized;
+    }
+
+    private String normalizeWebDavPath(String value) throws NativeRequestException {
+        String normalized = (value == null || value.trim().isEmpty() ? DEFAULT_WEBDAV_PATH : value.trim()).replaceAll("^/+", "");
+        String[] segments = normalized.split("/", -1);
+        if (normalized.isEmpty() || normalized.contains("?") || normalized.contains("#")) throw new NativeRequestException("WebDAV 远程路径无效。", "WEBDAV_INVALID_SETTINGS");
+        for (String segment : segments) {
+            if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) throw new NativeRequestException("WebDAV 远程路径无效。", "WEBDAV_INVALID_SETTINGS");
+        }
+        return normalized;
+    }
+
+    private URL buildWebDavUrl(String serverUrl, String remotePath) throws Exception {
+        return validateHttpUrl(serverUrl + "/" + remotePath);
     }
 
     private SharedPreferences preferences() {
@@ -320,6 +463,11 @@ public class ThreadBriefNativePlugin extends Plugin {
     private boolean hasApiKey() {
         SharedPreferences preferences = preferences();
         return preferences.contains(API_KEY_CIPHERTEXT) && preferences.contains(API_KEY_IV);
+    }
+
+    private boolean hasWebDavPassword() {
+        SharedPreferences preferences = preferences();
+        return preferences.contains(WEBDAV_PASSWORD_CIPHERTEXT) && preferences.contains(WEBDAV_PASSWORD_IV);
     }
 
     private String readApiKey() throws Exception {
@@ -340,25 +488,51 @@ public class ThreadBriefNativePlugin extends Plugin {
 
     private void encryptApiKey(String apiKey, SharedPreferences.Editor editor) throws GeneralSecurityException {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, getSecretKey());
+        cipher.init(Cipher.ENCRYPT_MODE, getSecretKey(KEY_ALIAS));
         byte[] ciphertext = cipher.doFinal(apiKey.getBytes(StandardCharsets.UTF_8));
         editor.putString(API_KEY_CIPHERTEXT, Base64.encodeToString(ciphertext, Base64.NO_WRAP));
         editor.putString(API_KEY_IV, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP));
     }
 
+    private String readWebDavPassword() throws Exception {
+        SharedPreferences preferences = preferences();
+        String encodedCiphertext = preferences.getString(WEBDAV_PASSWORD_CIPHERTEXT, null);
+        String encodedIv = preferences.getString(WEBDAV_PASSWORD_IV, null);
+        if (encodedCiphertext == null || encodedIv == null) throw new NativeRequestException("请先配置 WebDAV 密码。", "WEBDAV_NOT_CONFIGURED");
+        try {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, getSecretKey(WEBDAV_KEY_ALIAS), new GCMParameterSpec(128, Base64.decode(encodedIv, Base64.NO_WRAP)));
+            return new String(cipher.doFinal(Base64.decode(encodedCiphertext, Base64.NO_WRAP)), StandardCharsets.UTF_8);
+        } catch (GeneralSecurityException error) {
+            throw new NativeRequestException("WebDAV 密码无法解密，请重新保存。", "WEBDAV_PASSWORD_INVALID");
+        }
+    }
+
+    private void encryptWebDavPassword(String password, SharedPreferences.Editor editor) throws GeneralSecurityException {
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, getSecretKey(WEBDAV_KEY_ALIAS));
+        byte[] ciphertext = cipher.doFinal(password.getBytes(StandardCharsets.UTF_8));
+        editor.putString(WEBDAV_PASSWORD_CIPHERTEXT, Base64.encodeToString(ciphertext, Base64.NO_WRAP));
+        editor.putString(WEBDAV_PASSWORD_IV, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP));
+    }
+
     private SecretKey getSecretKey() throws GeneralSecurityException {
+        return getSecretKey(KEY_ALIAS);
+    }
+
+    private SecretKey getSecretKey(String alias) throws GeneralSecurityException {
         KeyStore keyStore = KeyStore.getInstance(KEYSTORE_NAME);
         try {
             keyStore.load(null);
         } catch (Exception error) {
             throw new GeneralSecurityException(error);
         }
-        if (keyStore.containsAlias(KEY_ALIAS)) {
-            return ((KeyStore.SecretKeyEntry) keyStore.getEntry(KEY_ALIAS, null)).getSecretKey();
+        if (keyStore.containsAlias(alias)) {
+            return ((KeyStore.SecretKeyEntry) keyStore.getEntry(alias, null)).getSecretKey();
         }
         KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_NAME);
         generator.init(new KeyGenParameterSpec.Builder(
-                KEY_ALIAS,
+                alias,
                 KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT
         ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
@@ -368,13 +542,17 @@ public class ThreadBriefNativePlugin extends Plugin {
     }
 
     private void deleteKeyAlias() throws GeneralSecurityException {
+        deleteKeyAlias(KEY_ALIAS);
+    }
+
+    private void deleteKeyAlias(String alias) throws GeneralSecurityException {
         KeyStore keyStore = KeyStore.getInstance(KEYSTORE_NAME);
         try {
             keyStore.load(null);
         } catch (Exception error) {
             throw new GeneralSecurityException(error);
         }
-        if (keyStore.containsAlias(KEY_ALIAS)) keyStore.deleteEntry(KEY_ALIAS);
+        if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias);
     }
 
     private String requestId(PluginCall call) {

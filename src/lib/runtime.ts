@@ -1,4 +1,5 @@
 import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL, summarizeTelegramPostWithCompletion } from '../../shared/summary';
+import type { WebDavMethod, WebDavSettings } from '../../shared/webdav';
 import {
   fetchTelegramPreview,
   TelegramFetchError,
@@ -11,13 +12,23 @@ import {
   isAndroidRuntime,
   requestNativeChatJson,
   requestNativeHtml,
+  clearNativeWebDavSettings,
+  getNativeWebDavSettings,
+  requestNativeWebDav,
+  saveNativeWebDavSettings,
   saveNativeSettings,
 } from './native';
+import { getBrowserWebDavCredentials, getBrowserWebDavSettings, saveBrowserWebDavSettings, clearBrowserWebDavSettings } from './webdav';
 
 export type RuntimeSettings = {
   hasApiKey: boolean;
   baseUrl: string;
   model: string;
+};
+
+export type RuntimeWebDavResponse = {
+  status: number;
+  body: string;
 };
 
 export type RuntimeApi = {
@@ -26,6 +37,10 @@ export type RuntimeApi = {
   getSettings(): Promise<RuntimeSettings>;
   saveSettings(input: { apiKey?: string; baseUrl: string; model: string }): Promise<void>;
   clearSettings(): Promise<void>;
+  getWebDavSettings(): Promise<WebDavSettings>;
+  saveWebDavSettings(input: { serverUrl: string; remotePath: string; username: string; password?: string }): Promise<void>;
+  clearWebDavSettings(): Promise<void>;
+  requestWebDav(input: { method: WebDavMethod; body?: string }, signal?: AbortSignal): Promise<RuntimeWebDavResponse>;
 };
 
 async function requestJson<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
@@ -78,6 +93,10 @@ function makeAndroidApi(): RuntimeApi {
     getSettings: getNativeSettings,
     saveSettings: saveNativeSettings,
     clearSettings: clearNativeSettings,
+    getWebDavSettings: getNativeWebDavSettings,
+    saveWebDavSettings: saveNativeWebDavSettings,
+    clearWebDavSettings: clearNativeWebDavSettings,
+    requestWebDav: (input, signal) => requestNativeWebDav(input, signal),
   };
 }
 
@@ -91,6 +110,20 @@ export const runtimeApi: RuntimeApi = isAndroidRuntime()
       getSettings: async () => ({ hasApiKey: true, baseUrl: DEFAULT_OPENAI_BASE_URL, model: DEFAULT_OPENAI_MODEL }),
       saveSettings: async () => undefined,
       clearSettings: async () => undefined,
+      getWebDavSettings: async () => getBrowserWebDavSettings(),
+      saveWebDavSettings: async (input) => saveBrowserWebDavSettings(input),
+      clearWebDavSettings: async () => clearBrowserWebDavSettings(),
+      requestWebDav: async (input, signal) => {
+        const credentials = getBrowserWebDavCredentials();
+        return requestJson<RuntimeWebDavResponse>('/api/webdav', {
+          method: input.method,
+          serverUrl: credentials.serverUrl,
+          remotePath: credentials.remotePath,
+          username: credentials.username,
+          password: credentials.password,
+          body: input.body,
+        }, signal);
+      },
     };
 
 export const isStandaloneAndroid = isAndroidRuntime();

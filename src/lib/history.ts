@@ -1,4 +1,5 @@
 import type { HistoryEntry } from '../types';
+import { MAX_HISTORY_ENTRIES } from '../../shared/webdav';
 
 const DB_NAME = 'threadbrief';
 const STORE_NAME = 'summaries';
@@ -29,7 +30,23 @@ export async function saveHistory(entry: HistoryEntry): Promise<void> {
     request.onerror = () => reject(request.error);
   });
   const entries = await listHistory();
-  for (const oldEntry of entries.slice(20)) await deleteHistory(oldEntry.id);
+  for (const oldEntry of entries.slice(MAX_HISTORY_ENTRIES)) await deleteHistory(oldEntry.id);
+}
+
+export async function replaceHistory(entries: HistoryEntry[]): Promise<void> {
+  const db = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.clear();
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      for (const entry of entries.slice(0, MAX_HISTORY_ENTRIES)) store.put(entry);
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
 }
 
 export async function deleteHistory(id: string): Promise<void> {
@@ -40,4 +57,3 @@ export async function deleteHistory(id: string): Promise<void> {
     request.onerror = () => reject(request.error);
   });
 }
-
