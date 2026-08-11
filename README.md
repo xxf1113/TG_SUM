@@ -95,7 +95,7 @@ npm run start
 
 ## 下载 Android APK
 
-debug APK 不再提交到 `main` 分支。请在 GitHub Actions 中手动运行 [Build Android APK](https://github.com/xxf1113/TG_SUM/actions/workflows/android-apk.yml)，完成后从对应运行记录的 Artifacts 下载 `telegram-thread-brief-debug-apk`。正式版本可从 [GitHub Releases](https://github.com/xxf1113/TG_SUM/releases) 下载。
+debug APK 不再提交到 `main` 分支。每次 push 会自动运行 [Build Android APK](https://github.com/xxf1113/TG_SUM/actions/workflows/android-apk.yml)，并在 [GitHub Releases](https://github.com/xxf1113/TG_SUM/releases) 创建一个预发布版本，附件名为 `TG帖子总结.apk`。也可以从对应 Actions 运行记录下载 Artifact。
 
 APK 支持 Android 7.0（API 24）及更高版本。首次打开后，在右上角配置 API Key、OpenAI Base URL 和模型名称。
 

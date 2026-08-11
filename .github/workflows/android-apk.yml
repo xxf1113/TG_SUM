@@ -4,7 +4,7 @@ on:
   push:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -42,3 +42,26 @@ jobs:
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Prepare release APK
+        shell: bash
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/debug/*.apk "release/TG帖子总结.apk"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_id }}
+          target_commitish: ${{ github.sha }}
+          name: "Android 自动构建 #${{ github.run_number }}"
+          body: |
+            本版本由 push 自动构建。
+
+            - 提交：`${{ github.sha }}`
+            - 分支：`${{ github.ref_name }}`
+            - 支持 Android 7.0（API 24）及更高版本
+            - 首次打开后请在应用右上角配置 API Key、OpenAI Base URL 和模型名称
+          prerelease: true
+          draft: false
+          files: release/TG帖子总结.apk
