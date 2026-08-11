@@ -156,6 +156,10 @@ function compareCreatedAt(left: HistoryEntry, right: HistoryEntry): number {
   return left.createdAt.localeCompare(right.createdAt);
 }
 
+function postKey(entry: HistoryEntry): string {
+  return `${entry.post.channel}\u0000${entry.post.messageId}`;
+}
+
 export function mergeHistory(localEntries: HistoryEntry[], remoteEntries: HistoryEntry[]): HistoryEntry[] {
   const merged = new Map<string, HistoryEntry>();
   for (const entry of normalizeEntries(localEntries)) {
@@ -166,7 +170,12 @@ export function mergeHistory(localEntries: HistoryEntry[], remoteEntries: Histor
     const current = merged.get(entry.id);
     if (!current || compareCreatedAt(entry, current) > 0) merged.set(entry.id, entry);
   }
-  return [...merged.values()].sort((left, right) => compareCreatedAt(right, left)).slice(0, MAX_HISTORY_ENTRIES);
+  const latestByPost = new Map<string, HistoryEntry>();
+  for (const entry of [...merged.values()].sort((left, right) => compareCreatedAt(right, left))) {
+    const key = postKey(entry);
+    if (!latestByPost.has(key)) latestByPost.set(key, entry);
+  }
+  return [...latestByPost.values()].slice(0, MAX_HISTORY_ENTRIES);
 }
 
 export function serializeHistory(entries: HistoryEntry[], updatedAt = new Date().toISOString()): string {

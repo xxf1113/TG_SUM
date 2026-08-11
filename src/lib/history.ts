@@ -23,11 +23,19 @@ export async function listHistory(): Promise<HistoryEntry[]> {
 }
 
 export async function saveHistory(entry: HistoryEntry): Promise<void> {
+  const existingEntries = await listHistory();
+  const duplicateIds = existingEntries
+    .filter((oldEntry) => oldEntry.id !== entry.id && oldEntry.post.channel === entry.post.channel && oldEntry.post.messageId === entry.post.messageId)
+    .map((oldEntry) => oldEntry.id);
   const db = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const request = db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(entry);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+    const transaction = db.transaction(STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
+    store.put(entry);
+    for (const duplicateId of duplicateIds) store.delete(duplicateId);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
   });
   const entries = await listHistory();
   for (const oldEntry of entries.slice(MAX_HISTORY_ENTRIES)) await deleteHistory(oldEntry.id);

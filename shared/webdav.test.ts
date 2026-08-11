@@ -3,12 +3,13 @@ import { MAX_HISTORY_ENTRIES, WebDavError, mergeHistory, parseHistoryArchive, se
 import type { HistoryEntry } from './types';
 
 function entry(id: string, createdAt: string): HistoryEntry {
+  const messageId = Number.isFinite(Number(id)) ? Number(id) : 10000;
   return {
     id,
     url: `https://t.me/channel/${id}`,
     channel: 'channel',
     createdAt,
-    post: { channel: 'channel', messageId: Number(id) || 1, url: `https://t.me/channel/${id}`, author: '频道', publishedAt: createdAt, text: '主贴', hasMedia: false },
+    post: { channel: 'channel', messageId, url: `https://t.me/channel/${id}`, author: '频道', publishedAt: createdAt, text: '主贴', hasMedia: false },
     comments: [{ id: `comment-${id}`, author: '用户', publishedAt: createdAt, text: '评论' }],
     warnings: [],
     fetchedAt: createdAt,
@@ -25,6 +26,10 @@ describe('WebDAV history archive', () => {
     expect(merged[0].id).toBe('new');
     expect(merged.find((item) => item.id === '0')?.createdAt).toBe('2027-01-01T00:00:00.000Z');
     expect(mergeHistory([entry('duplicate', '2026-01-01T00:00:00.000Z'), entry('duplicate', '2025-01-01T00:00:00.000Z')], [])).toHaveLength(1);
+    const samePostOlder = entry('101', '2025-01-01T00:00:00.000Z');
+    const samePostNewerBase = entry('102', '2026-01-01T00:00:00.000Z');
+    const samePostNewer = { ...samePostNewerBase, post: { ...samePostNewerBase.post, messageId: samePostOlder.post.messageId, url: samePostOlder.post.url } };
+    expect(mergeHistory([samePostOlder, samePostNewer], [])).toEqual([samePostNewer]);
   });
 
   it('round-trips comments and evidence without sensitive settings', () => {

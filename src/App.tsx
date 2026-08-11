@@ -103,7 +103,7 @@ function App() {
     const result = await runtimeApi.summary(nextPreview, signal);
     setSummary(result);
     const entry: HistoryEntry = {
-      id: `${nextPreview.post.channel}-${nextPreview.post.messageId}-${Date.now()}`,
+      id: `telegram-${encodeURIComponent(nextPreview.post.channel)}-${nextPreview.post.messageId}`,
       url: requestUrl,
       channel: nextPreview.post.channel,
       createdAt: new Date().toISOString(),
