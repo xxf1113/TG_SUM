@@ -21,6 +21,8 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .topbar-actions { display: flex; align-items: center; gap: 13px; }
 .privacy-note { display: flex; align-items: center; gap: 8px; color: #899895; font-size: calc(12px * var(--font-scale)); }
 .privacy-dot { width: 7px; height: 7px; border-radius: 50%; background: #70d6a8; box-shadow: 0 0 0 4px rgba(112, 214, 168, .1); }
+.github-button { display: inline-flex; align-items: center; gap: 6px; min-height: 31px; padding: 0 9px; color: #a6beb5; border: 1px solid rgba(226, 239, 232, .14); border-radius: 6px; font-size: calc(11px * var(--font-scale)); text-decoration: none; }
+.github-button:hover { color: #eaf8f1; background: rgba(141, 214, 189, .1); border-color: rgba(141, 214, 189, .32); }
 .settings-button { display: inline-grid; place-items: center; width: 31px; height: 31px; padding: 0; color: #a6beb5; background: transparent; border: 1px solid rgba(226, 239, 232, .14); border-radius: 6px; }
 .settings-button:hover { color: #eaf8f1; background: rgba(141, 214, 189, .1); border-color: rgba(141, 214, 189, .32); }
 .settings-backdrop { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 22px; background: rgba(4, 10, 11, .76); }
