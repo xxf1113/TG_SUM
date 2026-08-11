@@ -20,7 +20,7 @@
 
 ## 运行环境
 
-- Node.js 20 或更高版本
+- Node.js 22 或更高版本
 - npm
 - 可访问 Telegram 的网络环境
 - OpenAI API Key 或 OpenAI 兼容中转站 Key
