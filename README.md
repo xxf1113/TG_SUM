@@ -95,9 +95,27 @@ npm run start
 
 ## 下载 Android APK
 
-debug APK 不再提交到 `main` 分支。每次 push 会自动运行 [Build Android APK](https://github.com/xxf1113/TG_SUM/actions/workflows/android-apk.yml)，并在 [GitHub Releases](https://github.com/xxf1113/TG_SUM/releases) 创建一个预发布版本，附件名为 `TG帖子总结.apk`。也可以从对应 Actions 运行记录下载 Artifact。
+debug APK 不再用于发布更新。每次 push 会自动运行 [Build Android APK](https://github.com/xxf1113/TG_SUM/actions/workflows/android-apk.yml)，使用固定 Release 签名并在 [GitHub Releases](https://github.com/xxf1113/TG_SUM/releases) 创建一个预发布版本，附件名为 `TG帖子总结.apk`。也可以从对应 Actions 运行记录下载 `telegram-thread-brief-release-apk` Artifact。
 
 APK 支持 Android 7.0（API 24）及更高版本。首次打开后，在右上角配置 API Key、OpenAI Base URL 和模型名称。
+
+### 签名密钥配置
+
+GitHub Actions 不把签名私钥提交到仓库，需要在 GitHub 仓库的 Settings → Secrets and variables → Actions 中配置以下 Secrets：
+
+- `ANDROID_KEYSTORE_BASE64`：Release keystore 文件的 Base64 内容
+- `ANDROID_KEYSTORE_PASSWORD`：keystore 密码
+- `ANDROID_KEY_ALIAS`：密钥别名
+- `ANDROID_KEY_PASSWORD`：密钥密码
+
+可以使用以下命令生成新密钥。请妥善备份生成的 `.jks` 文件；丢失同一签名密钥后，Android 无法继续覆盖更新。
+
+```powershell
+keytool -genkeypair -v -keystore threadbrief-release.jks -alias threadbrief -keyalg RSA -keysize 2048 -validity 10000
+$env:ANDROID_KEYSTORE_BASE64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes('.\\threadbrief-release.jks'))
+```
+
+当前手机中安装的旧 APK 如果来自之前的 GitHub debug 构建，因签名不同无法直接更新。首次切换到固定 Release 签名时，需要先卸载旧版再安装；卸载前请先通过 WebDAV 同步历史记录。之后从同一工作流生成的 APK 即可正常覆盖更新。
 
 ## 构建 Android APK
 
@@ -107,7 +125,7 @@ Android 版不启动 Node 服务。首次打开 APK 后，在右上角配置 API
 npm run android:build
 ```
 
-个人安装版输出在：
+本地 debug 安装版输出在：
 
 ```text
 android/app/build/outputs/apk/debug/TG帖子总结.apk
@@ -157,7 +175,7 @@ npm test
 - Telegram 页面结构变化可能导致抓取失败。
 - 只能获取 Telegram 公开讨论组件中可见的评论。
 - 评论数量较多时，工具最多处理 500 条，并在页面中显示抓取限制。
-- `.env`、依赖目录、Android 构建目录和本地构建缓存不会提交到 Git 仓库；debug APK 通过 GitHub Actions Artifact 或 GitHub Release 分发。
+- `.env`、依赖目录、Android 构建目录、keystore 和本地构建缓存不会提交到 Git 仓库；固定 Release 签名 APK 通过 GitHub Actions Artifact 或 GitHub Release 分发。
 
 ## 项目结构
 
