@@ -4,6 +4,32 @@ import { MAX_HISTORY_ENTRIES } from '../../shared/webdav';
 const DB_NAME = 'threadbrief';
 const STORE_NAME = 'summaries';
 
+function historySearchText(entry: HistoryEntry): string {
+  const summaryItems = [
+    ...entry.summary.consensus,
+    ...entry.summary.disagreements,
+    ...entry.summary.recommendations,
+  ];
+
+  return [
+    entry.id,
+    entry.url,
+    entry.channel,
+    entry.post.author,
+    entry.post.text,
+    ...(entry.comments ?? []).flatMap((comment) => [comment.author, comment.text]),
+    entry.summary.question,
+    ...summaryItems.flatMap((item) => typeof item === 'string' ? [item] : [item.text, ...item.evidence.flatMap((evidence) => [evidence.author, evidence.quote])]),
+    ...entry.summary.limitations,
+  ].join('\n').toLocaleLowerCase();
+}
+
+export function searchHistory(entries: HistoryEntry[], query: string): HistoryEntry[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return entries;
+  return entries.filter((entry) => historySearchText(entry).includes(normalizedQuery));
+}
+
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);

@@ -16,6 +16,7 @@ import {
   MessageCircle,
   Quote,
   RefreshCw,
+  Search,
   Save,
   Settings,
   Sparkles,
@@ -25,7 +26,7 @@ import {
 } from 'lucide-react';
 import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL } from '../shared/summary';
 import { DEFAULT_WEBDAV_PATH, MAX_HISTORY_ENTRIES, WebDavError, buildWebDavFileUrl, mergeHistory, normalizeWebDavPath, normalizeWebDavServerUrl, parseHistoryArchive, serializeHistory, webDavStatusError, type WebDavSettings } from '../shared/webdav';
-import { deleteHistory, listHistory, replaceHistory, saveHistory } from './lib/history';
+import { deleteHistory, listHistory, replaceHistory, saveHistory, searchHistory } from './lib/history';
 import { isStandaloneAndroid, runtimeApi, type RuntimeSettings } from './lib/runtime';
 import type { HistoryEntry, SummaryItem, SummaryResult, SummarySectionItem, TelegramPreview } from './types';
 
@@ -80,6 +81,7 @@ function App() {
   const [webDavRemotePath, setWebDavRemotePath] = useState(DEFAULT_WEBDAV_PATH);
   const [webDavUsername, setWebDavUsername] = useState('');
   const [webDavPassword, setWebDavPassword] = useState('');
+  const [historyQuery, setHistoryQuery] = useState('');
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -97,7 +99,9 @@ function App() {
   }, []);
 
   const sourceLabel = useMemo(() => preview ? `${preview.post.channel} / 帖子 ${preview.post.messageId}` : '等待公开帖子', [preview]);
-  const visibleHistory = historyExpanded ? history : history.slice(0, HISTORY_PREVIEW_COUNT);
+  const historySearchActive = historyQuery.trim().length > 0;
+  const filteredHistory = useMemo(() => searchHistory(history, historyQuery), [history, historyQuery]);
+  const visibleHistory = historySearchActive ? filteredHistory : historyExpanded ? history : history.slice(0, HISTORY_PREVIEW_COUNT);
 
   async function summarizePreview(nextPreview: TelegramPreview, requestUrl: string, signal: AbortSignal) {
     const result = await runtimeApi.summary(nextPreview, signal);
@@ -348,6 +352,11 @@ function App() {
     }
   }
 
+  function clearHistorySearch() {
+    setHistoryQuery('');
+    setHistoryExpanded(false);
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -429,10 +438,10 @@ function App() {
         </div>
 
         <section className="history-section">
-          <div className="history-heading"><div><p className="panel-kicker">LOCAL ARCHIVE</p><h2>最近总结</h2></div><div className="history-heading-actions"><span><Clock3 size={15} />{history.length} / {MAX_HISTORY_ENTRIES}</span><button className="secondary-button history-sync-button" onClick={() => void syncWebDav()} disabled={webDavBusy || Boolean(busy)} title="读取并合并 WebDAV 历史"><Cloud size={15} />{webDavBusy ? '同步中' : 'WebDAV 同步'}</button></div></div>
+          <div className="history-heading"><div><p className="panel-kicker">LOCAL ARCHIVE</p><h2>最近总结</h2></div><div className="history-heading-actions"><label className="history-search"><Search size={15} /><input value={historyQuery} onChange={(event) => { setHistoryQuery(event.target.value); if (!event.target.value.trim()) setHistoryExpanded(false); }} placeholder="搜索历史帖子" aria-label="搜索历史帖子" />{historySearchActive && <button type="button" className="history-search-clear" onClick={clearHistorySearch} title="清除搜索" aria-label="清除搜索"><X size={14} /></button>}</label><span><Clock3 size={15} />{historySearchActive ? `${filteredHistory.length} / ${history.length}` : `${history.length} / ${MAX_HISTORY_ENTRIES}`}</span><button className="secondary-button history-sync-button" onClick={() => void syncWebDav()} disabled={webDavBusy || Boolean(busy)} title="读取并合并 WebDAV 历史"><Cloud size={15} />{webDavBusy ? '同步中' : 'WebDAV 同步'}</button></div></div>
           {webDavStatus && <div className="webdav-status"><Cloud size={15} /><span>{webDavStatus}</span></div>}
           {webDavError && !webDavOpen && <div className="alert error-alert webdav-alert"><AlertTriangle size={16} /><span>{webDavError}</span><button className="icon-button" title="关闭提示" onClick={() => setWebDavError('')}>×</button></div>}
-          {history.length ? <><div className="history-list">{visibleHistory.map((entry) => <div className={`history-item ${activeHistoryId === entry.id ? 'active' : ''}`} key={entry.id} onClick={() => void openHistory(entry)}><div className="history-channel">@{entry.channel}</div><div className="history-question">{entry.summary.question}</div><time>{formatDate(entry.createdAt)}</time><button className="icon-button danger" title="删除历史记录" onClick={(event) => { event.stopPropagation(); void removeHistory(entry.id); }}><Trash2 size={16} /></button></div>)}</div>{history.length > HISTORY_PREVIEW_COUNT && <button className="history-expand-button" onClick={() => setHistoryExpanded((expanded) => !expanded)} aria-expanded={historyExpanded}>{historyExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}{historyExpanded ? '收起' : '展开'}<span>{historyExpanded ? '' : `（还有 ${history.length - HISTORY_PREVIEW_COUNT} 条）`}</span></button>}</> : <div className="history-empty"><Clock3 size={17} />完成第一次总结后，结果会出现在这里。</div>}
+          {visibleHistory.length ? <><div className="history-list">{visibleHistory.map((entry) => <div className={`history-item ${activeHistoryId === entry.id ? 'active' : ''}`} key={entry.id} onClick={() => void openHistory(entry)}><div className="history-channel">@{entry.channel}</div><div className="history-question">{entry.summary.question}</div><time>{formatDate(entry.createdAt)}</time><button className="icon-button danger" title="删除历史记录" onClick={(event) => { event.stopPropagation(); void removeHistory(entry.id); }}><Trash2 size={16} /></button></div>)}</div>{!historySearchActive && history.length > HISTORY_PREVIEW_COUNT && <button className="history-expand-button" onClick={() => setHistoryExpanded((expanded) => !expanded)} aria-expanded={historyExpanded}>{historyExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}{historyExpanded ? '收起' : '展开'}<span>{historyExpanded ? '' : `（还有 ${history.length - HISTORY_PREVIEW_COUNT} 条）`}</span></button>}</> : historySearchActive ? <div className="history-empty"><Search size={17} />没有找到匹配的历史帖子。</div> : <div className="history-empty"><Clock3 size={17} />完成第一次总结后，结果会出现在这里。</div>}
         </section>
       </main>
       <footer className="footer"><span>ThreadBrief</span><span>仅处理公开 Telegram 页面 · 由 OpenAI 生成总结</span><button className="refresh-button" title="重新读取本地历史" onClick={() => listHistory().then(setHistory)}><RefreshCw size={14} /></button></footer>
