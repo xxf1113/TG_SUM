@@ -114,6 +114,9 @@ h1 span { color: #8dd6bd; }
 .summary-panel .empty-copy { font-size: calc(13px * var(--font-scale)); }
 .summary-panel .result-footer { font-size: calc(12px * var(--font-scale)); }
 .summary-panel .ready-badge { font-size: calc(11px * var(--font-scale)); }
+.summary-heading-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: end; gap: 7px; }
+.summary-action-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 31px; padding: 0 9px; color: #a6beb5; background: transparent; border: 1px solid rgba(226, 239, 232, .14); border-radius: 6px; font-size: calc(10px * var(--font-scale)); white-space: nowrap; }
+.summary-action-button:hover { color: #eaf8f1; background: rgba(141, 214, 189, .1); border-color: rgba(141, 214, 189, .32); }
 .ready-badge { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; color: #8edabb; background: rgba(112, 214, 168, .1); border-radius: 4px; font-size: calc(10px * var(--font-scale)); }
 .result-content { margin-top: 28px; }
 .question-block { padding: 17px 18px; margin-bottom: 20px; background: rgba(141, 214, 189, .08); border-left: 3px solid #8dd6bd; }
@@ -185,6 +188,7 @@ h1 span { color: #8dd6bd; }
   .history-item { grid-template-columns: 120px minmax(0, 1fr) 30px; }
   .history-item time { display: none; }
   .history-search { min-width: 160px; }
+  .summary-heading-actions { justify-content: end; }
 }
 @media (max-width: 560px) {
   .topbar { height: 58px; }
@@ -206,6 +210,8 @@ h1 span { color: #8dd6bd; }
   .history-item { grid-template-columns: 1fr 30px; }
   .history-heading { align-items: start; flex-direction: column; }
   .history-heading-actions { width: 100%; justify-content: space-between; }
+  .summary-panel .panel-heading { align-items: start; flex-direction: column; }
+  .summary-heading-actions { width: 100%; justify-content: start; }
   .history-search { flex: 1; min-width: 0; }
   .history-question { grid-row: 2; grid-column: 1 / -1; }
   .history-item .icon-button { grid-column: 2; grid-row: 1; }

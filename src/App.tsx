@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  Copy,
   ClipboardPaste,
   ChevronDown,
   ChevronUp,
@@ -23,7 +24,9 @@ import {
   Square,
   Trash2,
   X,
+  Download,
 } from 'lucide-react';
+import { summaryToMarkdown } from '../shared/markdown';
 import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL } from '../shared/summary';
 import { DEFAULT_WEBDAV_PATH, MAX_HISTORY_ENTRIES, WebDavError, buildWebDavFileUrl, mergeHistory, normalizeWebDavPath, normalizeWebDavServerUrl, parseHistoryArchive, serializeHistory, webDavStatusError, type WebDavSettings } from '../shared/webdav';
 import { deleteHistory, listHistory, replaceHistory, saveHistory, searchHistory } from './lib/history';
@@ -83,6 +86,7 @@ function App() {
   const [webDavPassword, setWebDavPassword] = useState('');
   const [historyQuery, setHistoryQuery] = useState('');
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [markdownAction, setMarkdownAction] = useState<'copied' | 'exported' | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -298,6 +302,32 @@ function App() {
     abortControllerRef.current?.abort();
   }
 
+  async function copySummaryMarkdown() {
+    if (!summary) return;
+    try {
+      await navigator.clipboard.writeText(summaryToMarkdown(summary, preview?.post));
+      setMarkdownAction('copied');
+      window.setTimeout(() => setMarkdownAction(null), 1800);
+    } catch {
+      setError('无法写入剪贴板，请检查浏览器的剪贴板权限后重试。');
+    }
+  }
+
+  function exportSummaryMarkdown() {
+    if (!summary) return;
+    const markdown = summaryToMarkdown(summary, preview?.post);
+    const filePart = (preview?.post.channel || 'summary').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-').trim() || 'summary';
+    const fileName = `threadbrief-${filePart}-${preview?.post.messageId ?? 'result'}.md`;
+    const downloadUrl = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = fileName;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+    setMarkdownAction('exported');
+    window.setTimeout(() => setMarkdownAction(null), 1800);
+  }
+
   async function pasteUrl() {
     try {
       const pastedUrl = (await navigator.clipboard.readText()).trim();
@@ -432,7 +462,7 @@ function App() {
           </details>
 
           <section className="summary-panel">
-            <div className="panel-heading"><div><p className="panel-kicker">AI SYNTHESIS</p><h2>总结结果</h2></div>{summary && <span className="ready-badge"><CheckCircle2 size={14} />已完成</span>}</div>
+            <div className="panel-heading"><div><p className="panel-kicker">AI SYNTHESIS</p><h2>总结结果</h2></div>{summary && <div className="summary-heading-actions"><button className="summary-action-button" onClick={() => void copySummaryMarkdown()} title="复制为 Markdown" aria-label="复制为 Markdown"><Copy size={15} />{markdownAction === 'copied' ? '已复制' : '复制 Markdown'}</button><button className="summary-action-button" onClick={exportSummaryMarkdown} title="导出为 Markdown 文件" aria-label="导出为 Markdown 文件"><Download size={15} />{markdownAction === 'exported' ? '已导出' : '导出 Markdown'}</button><span className="ready-badge"><CheckCircle2 size={14} />已完成</span></div>}</div>
             {!summary ? <div className="summary-empty"><div className="summary-orbit"><Sparkles size={24} /></div><h3>等待一条值得总结的讨论</h3><p>生成后会把零散答复整理成问题、共识、分歧和建议。</p></div> : <div className="result-content"><div className="question-block"><span>主贴在问什么</span><h3>{summary.question}</h3></div><ResultSection title="评论区共识" items={summary.consensus} tone="teal" /><ResultSection title="观点分歧" items={summary.disagreements} tone="amber" /><ResultSection title="关键建议" items={summary.recommendations} tone="coral" />{summary.limitations.length > 0 && <ResultSection title="数据限制" items={summary.limitations} tone="slate" />}<div className="result-footer"><CheckCircle2 size={15} />内容根据当前公开可见帖子与评论生成</div></div>}
           </section>
         </div>
