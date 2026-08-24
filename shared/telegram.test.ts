@@ -26,4 +26,21 @@ describe('shared Telegram preview flow', () => {
     expect(preview.comments).toEqual([{ id: 'discussion/1', author: '用户 A', publishedAt: '', text: '评论内容' }]);
     expect(requests[0]).toBe('https://t.me/s/example_channel/42');
   });
+
+  it('normalizes case-insensitive channel names before fetching', async () => {
+    const requests: string[] = [];
+    const html = `
+      <div class="tgme_widget_message_wrap" data-post="example_channel/42">
+        <div class="tgme_widget_message_text">主贴内容</div>
+      </div>`;
+
+    const preview = await fetchTelegramPreview('https://t.me/Example_Channel/42', async (url) => {
+      requests.push(url);
+      return html;
+    });
+
+    expect(requests[0]).toBe('https://t.me/s/example_channel/42');
+    expect(preview.post.channel).toBe('example_channel');
+    expect(preview.post.text).toBe('主贴内容');
+  });
 });

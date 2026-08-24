@@ -102,7 +102,7 @@ export function normalizeTelegramUrl(input: string): TelegramLink {
     throw new TelegramFetchError('链接需要符合 t.me/频道名/帖子ID 格式。');
   }
 
-  const channel = parts[0].replace(/^@/, '');
+  const channel = parts[0].replace(/^@/, '').toLowerCase();
   const messageId = Number(parts[1]);
   if (!/^[a-zA-Z0-9_]{3,}$/.test(channel) || !Number.isSafeInteger(messageId) || messageId <= 0) {
     throw new TelegramFetchError('频道名或帖子 ID 无效。');
