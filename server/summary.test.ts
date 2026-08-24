@@ -1,15 +1,21 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import OpenAI from 'openai';
-import { classifyOpenAIError, DEFAULT_OPENAI_BASE_URL, getOpenAIBaseUrl, normalizeSummaryResult } from './summary';
+import { classifyOpenAIError, DEFAULT_OPENAI_BASE_URL, getOpenAIBaseUrl, normalizeSummaryResult, resolveOpenAISettings } from './summary';
 
 const originalBaseUrl = process.env.OPENAI_BASE_URL;
 const originalApiBase = process.env.OPENAI_API_BASE;
+const originalApiKey = process.env.OPENAI_API_KEY;
+const originalModel = process.env.OPENAI_MODEL;
 
 afterEach(() => {
   if (originalBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
   else process.env.OPENAI_BASE_URL = originalBaseUrl;
   if (originalApiBase === undefined) delete process.env.OPENAI_API_BASE;
   else process.env.OPENAI_API_BASE = originalApiBase;
+  if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY;
+  else process.env.OPENAI_API_KEY = originalApiKey;
+  if (originalModel === undefined) delete process.env.OPENAI_MODEL;
+  else process.env.OPENAI_MODEL = originalModel;
 });
 
 describe('OpenAI-compatible endpoint configuration', () => {
@@ -28,6 +34,20 @@ describe('OpenAI-compatible endpoint configuration', () => {
     delete process.env.OPENAI_BASE_URL;
     process.env.OPENAI_API_BASE = 'https://proxy.example.com/openai/v1';
     expect(getOpenAIBaseUrl()).toBe('https://proxy.example.com/openai/v1');
+  });
+
+  it('uses either the complete custom configuration or the environment configuration', () => {
+    process.env.OPENAI_API_KEY = 'env-key';
+    process.env.OPENAI_BASE_URL = 'https://env.example/v1';
+    process.env.OPENAI_MODEL = 'env-model';
+
+    expect(resolveOpenAISettings({ apiKey: ' custom-key ', baseUrl: 'https://custom.example/v1///', model: ' custom-model ' })).toEqual({
+      apiKey: 'custom-key',
+      baseUrl: 'https://custom.example/v1',
+      model: 'custom-model',
+    });
+    expect(() => resolveOpenAISettings({ apiKey: '', baseUrl: 'https://custom.example/v1', model: 'custom-model' })).toThrow('CUSTOM_API_SETTINGS_INVALID');
+    expect(resolveOpenAISettings()).toEqual({ apiKey: 'env-key', baseUrl: 'https://env.example/v1', model: 'env-model' });
   });
 });
 

@@ -126,8 +126,16 @@ function App() {
     setActiveHistoryId(entry.id);
   }
 
-  function openSettings() {
+  async function openSettings() {
     setSettingsError('');
+    try {
+      const nextSettings = await runtimeApi.getSettings();
+      setSettings(nextSettings);
+      setBaseUrl(nextSettings.baseUrl);
+      setModel(nextSettings.model);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : '无法读取 API 配置。');
+    }
     setSettingsOpen(true);
   }
 
@@ -391,7 +399,7 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand"><div className="brand-mark"><Sparkles size={18} /></div><span>ThreadBrief</span><em>TELEGRAM</em></div>
-        <div className="topbar-actions"><a className="github-button" href="https://github.com/xxf1113/TG_SUM" target="_blank" rel="noreferrer" title="打开 GitHub 项目" aria-label="打开 GitHub 项目"><Github size={16} />GitHub</a><button className="settings-button" onClick={() => void openWebDavSettings()} title="打开 WebDAV 配置" aria-label="打开 WebDAV 配置"><Cloud size={17} /></button>{isStandaloneAndroid && <button className="settings-button" onClick={openSettings} title="打开 Android 配置" aria-label="打开 Android 配置"><Settings size={17} /></button>}</div>
+        <div className="topbar-actions"><a className="github-button" href="https://github.com/xxf1113/TG_SUM" target="_blank" rel="noreferrer" title="打开 GitHub 项目" aria-label="打开 GitHub 项目"><Github size={16} />GitHub</a><button className={`settings-button ${settings?.hasApiKey ? 'active' : ''}`} onClick={() => void openSettings()} title={settings?.hasApiKey ? `自定义 API 已启用：${settings.model}` : '打开自定义 API 配置'} aria-label="打开自定义 API 配置"><Settings size={17} /></button><button className="settings-button" onClick={() => void openWebDavSettings()} title="打开 WebDAV 配置" aria-label="打开 WebDAV 配置"><Cloud size={17} /></button></div>
       </header>
 
       {webDavOpen && <div className="settings-backdrop" role="presentation">
@@ -407,12 +415,12 @@ function App() {
         </section>
       </div>}
 
-      {settingsOpen && isStandaloneAndroid && <div className="settings-backdrop" role="presentation">
+      {settingsOpen && <div className="settings-backdrop" role="presentation">
         <section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-          <div className="settings-heading"><div><p className="panel-kicker">ANDROID CONFIGURATION</p><h2 id="settings-title">应用配置</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} title="关闭配置" aria-label="关闭配置"><X size={18} /></button></div>
-          <p className="settings-copy">API Key 只保存于本机的 Android 加密存储中，不会写入网页历史或应用资源。</p>
-          <label className="settings-field"><span>OpenAI API Key {settings?.hasApiKey && <em>已保存，留空表示保持不变</em>}</span><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" placeholder={settings?.hasApiKey ? '已保存的 Key' : 'sk-...'} /></label>
-          <label className="settings-field"><span>OpenAI Base URL</span><input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} inputMode="url" placeholder={DEFAULT_OPENAI_BASE_URL} /></label>
+          <div className="settings-heading"><div><p className="panel-kicker">CUSTOM API</p><h2 id="settings-title">自定义 API 配置</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} title="关闭配置" aria-label="关闭配置"><X size={18} /></button></div>
+          <p className="settings-copy">{settings?.hasApiKey ? `自定义 API 已启用，当前模型：${settings.model}` : isStandaloneAndroid ? 'API Key 只保存于本机的 Android 加密存储中。' : '配置只保存在当前浏览器本地，用于调用 OpenAI 兼容接口。'}</p>
+          <label className="settings-field"><span>API Key {settings?.hasApiKey && <em>已保存，留空表示保持不变</em>}</span><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" placeholder={settings?.hasApiKey ? '已保存的 Key' : 'sk-...'} /></label>
+          <label className="settings-field"><span>API Base URL</span><input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} inputMode="url" placeholder={DEFAULT_OPENAI_BASE_URL} /></label>
           <label className="settings-field"><span>模型名称</span><input value={model} onChange={(event) => setModel(event.target.value)} placeholder={DEFAULT_OPENAI_MODEL} /></label>
           {settingsError && <div className="alert error-alert settings-alert"><AlertTriangle size={16} /><span>{settingsError}</span></div>}
           <div className="settings-actions"><button className="text-button danger-text" onClick={() => void clearSettings()} disabled={settingsBusy || !settings?.hasApiKey}>清除 Key</button><span /><button className="secondary-button" onClick={() => setSettingsOpen(false)} disabled={settingsBusy}>取消</button><button className="primary-button" onClick={() => void saveSettingsForm()} disabled={settingsBusy}><Save size={16} />{settingsBusy ? '保存中' : '保存配置'}</button></div>

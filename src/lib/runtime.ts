@@ -1,4 +1,4 @@
-import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL, summarizeTelegramPostWithCompletion } from '../../shared/summary';
+import { summarizeTelegramPostWithCompletion } from '../../shared/summary';
 import type { WebDavMethod, WebDavSettings } from '../../shared/webdav';
 import {
   fetchTelegramPreview,
@@ -19,6 +19,7 @@ import {
   saveNativeSettings,
 } from './native';
 import { getBrowserWebDavCredentials, getBrowserWebDavSettings, saveBrowserWebDavSettings, clearBrowserWebDavSettings } from './webdav';
+import { clearBrowserApiSettings, getBrowserApiRequestSettings, getBrowserApiSettings, saveBrowserApiSettings } from './api-settings';
 
 export type RuntimeSettings = {
   hasApiKey: boolean;
@@ -42,6 +43,11 @@ export type RuntimeApi = {
   clearWebDavSettings(): Promise<void>;
   requestWebDav(input: { method: WebDavMethod; body?: string }, signal?: AbortSignal): Promise<RuntimeWebDavResponse>;
 };
+
+export function buildSummaryRequestBody(preview: TelegramPreview): { preview: TelegramPreview; apiKey?: string; baseUrl?: string; model?: string } {
+  const settings = getBrowserApiRequestSettings();
+  return settings ? { preview, ...settings } : { preview };
+}
 
 async function requestJson<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
@@ -106,10 +112,10 @@ export const runtimeApi: RuntimeApi = isAndroidRuntime()
   ? androidApi
   : {
       preview: (url, signal) => requestJson<TelegramPreview>('/api/telegram/preview', { url }, signal),
-      summary: (preview, signal) => requestJson<SummaryResult>('/api/summary', { preview }, signal),
-      getSettings: async () => ({ hasApiKey: true, baseUrl: DEFAULT_OPENAI_BASE_URL, model: DEFAULT_OPENAI_MODEL }),
-      saveSettings: async () => undefined,
-      clearSettings: async () => undefined,
+      summary: (preview, signal) => requestJson<SummaryResult>('/api/summary', buildSummaryRequestBody(preview), signal),
+      getSettings: async () => getBrowserApiSettings(),
+      saveSettings: async (input) => saveBrowserApiSettings(input),
+      clearSettings: async () => clearBrowserApiSettings(),
       getWebDavSettings: async () => getBrowserWebDavSettings(),
       saveWebDavSettings: async (input) => saveBrowserWebDavSettings(input),
       clearWebDavSettings: async () => clearBrowserWebDavSettings(),

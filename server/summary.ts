@@ -23,6 +23,12 @@ export type OpenAISummaryErrorCode =
   | 'OPENAI_CANCELLED'
   | 'OPENAI_REQUEST_FAILED';
 
+export type OpenAIRequestSettings = {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+};
+
 export class OpenAISummaryError extends Error {
   constructor(public readonly code: OpenAISummaryErrorCode, public readonly status?: number) {
     super(code);
@@ -30,19 +36,40 @@ export class OpenAISummaryError extends Error {
   }
 }
 
-export function getOpenAIBaseUrl(): string {
-  const configured = process.env.OPENAI_BASE_URL?.trim() || process.env.OPENAI_API_BASE?.trim();
+export function getOpenAIBaseUrl(override?: string): string {
+  const configured = override?.trim() || process.env.OPENAI_BASE_URL?.trim() || process.env.OPENAI_API_BASE?.trim();
   return (configured || DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, '');
 }
 
-function getClient(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
+export function resolveOpenAISettings(settings?: OpenAIRequestSettings): OpenAIRequestSettings {
+  if (settings) {
+    const apiKey = settings.apiKey.trim();
+    const baseUrl = settings.baseUrl.trim().replace(/\/+$/, '');
+    const model = settings.model.trim();
+    if (!apiKey || !baseUrl || !model) throw new Error('CUSTOM_API_SETTINGS_INVALID');
+    try {
+      if (new URL(baseUrl).protocol !== 'https:') throw new Error('invalid protocol');
+    } catch {
+      throw new Error('CUSTOM_API_SETTINGS_INVALID');
+    }
+    return { apiKey, baseUrl, model };
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new Error('OPENAI_API_KEY_MISSING');
+  return {
+    apiKey,
+    baseUrl: getOpenAIBaseUrl(),
+    model: process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL,
+  };
+}
+
+function getClient(settings: OpenAIRequestSettings): OpenAI {
   const configuredTimeout = Number(process.env.OPENAI_TIMEOUT_MS);
   const timeout = Number.isFinite(configuredTimeout) && configuredTimeout >= 5_000 && configuredTimeout <= 300_000
     ? configuredTimeout
     : DEFAULT_OPENAI_TIMEOUT;
-  return new OpenAI({ apiKey, baseURL: getOpenAIBaseUrl(), timeout, maxRetries: 0 });
+  return new OpenAI({ apiKey: settings.apiKey, baseURL: settings.baseUrl, timeout, maxRetries: 0 });
 }
 
 function errorDetails(error: APIError): string {
@@ -82,9 +109,10 @@ export async function summarizeTelegramPost(
   comments: TelegramComment[],
   warnings: string[],
   signal?: AbortSignal,
+  settings?: OpenAIRequestSettings,
 ) {
-  const client = getClient();
-  const model = process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL;
+  const resolvedSettings = resolveOpenAISettings(settings);
+  const client = getClient(resolvedSettings);
   try {
     return await summarizeTelegramPostWithCompletion(
       post,
@@ -99,7 +127,7 @@ export async function summarizeTelegramPost(
         if (!content) throw new Error('OPENAI_EMPTY_RESPONSE');
         return content;
       },
-      model,
+      resolvedSettings.model,
       signal,
     );
   } catch (error) {

@@ -23,6 +23,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .github-button:hover { color: #eaf8f1; background: rgba(141, 214, 189, .1); border-color: rgba(141, 214, 189, .32); }
 .settings-button { display: inline-grid; place-items: center; width: 31px; height: 31px; padding: 0; color: #a6beb5; background: transparent; border: 1px solid rgba(226, 239, 232, .14); border-radius: 6px; }
 .settings-button:hover { color: #eaf8f1; background: rgba(141, 214, 189, .1); border-color: rgba(141, 214, 189, .32); }
+.settings-button.active { color: #10201e; background: #8dd6bd; border-color: #8dd6bd; }
 .settings-backdrop { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 22px; background: rgba(4, 10, 11, .76); }
 .settings-dialog { width: min(100%, 520px); padding: 25px; color: #eaf1ef; background: #142123; border: 1px solid rgba(141, 214, 189, .28); border-radius: 9px; box-shadow: 0 22px 70px rgba(0, 0, 0, .44); }
 .settings-heading { display: flex; align-items: start; justify-content: space-between; gap: 14px; }

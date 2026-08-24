@@ -4,7 +4,7 @@ import { extname, isAbsolute, join, normalize, relative as relativePath, sep } f
 import { fileURLToPath } from 'node:url';
 import { loadEnvFile } from 'node:process';
 import { fetchTelegramPreview, TelegramFetchError } from './telegram';
-import { OpenAISummaryError, summarizeTelegramPost } from './summary';
+import { OpenAISummaryError, summarizeTelegramPost, type OpenAIRequestSettings } from './summary';
 import { proxyWebDav } from './webdav';
 import { MAX_WEBDAV_BYTES, WebDavError } from '../shared/webdav';
 import type { TelegramPreview } from './types';
@@ -78,7 +78,7 @@ function errorMessage(error: unknown): { status: number; message: string } {
       OPENAI_PERMISSION_DENIED: 'OpenAI Key 没有访问该模型或接口的权限。',
       OPENAI_INSUFFICIENT_QUOTA: 'OpenAI 账户余额或配额不足，请检查计费设置。',
       OPENAI_RATE_LIMITED: 'OpenAI 请求过于频繁，请稍后重试。',
-      OPENAI_MODEL_NOT_FOUND: '模型不存在，或中转站不支持当前 OPENAI_MODEL。',
+      OPENAI_MODEL_NOT_FOUND: '模型不存在，或当前 API 不支持所选模型。',
       OPENAI_STRUCTURED_OUTPUT_UNSUPPORTED: '当前模型或中转站不支持结构化 JSON 输出，请更换模型或中转站。',
       OPENAI_TIMEOUT: 'OpenAI 请求超时，请稍后重试或降低评论内容量。',
       OPENAI_CANCELLED: '总结已取消。',
@@ -95,6 +95,7 @@ function errorMessage(error: unknown): { status: number; message: string } {
   }
   if (error instanceof Error) {
     if (error.message === 'OPENAI_API_KEY_MISSING') return { status: 503, message: '服务端尚未配置 OPENAI_API_KEY。' };
+    if (error.message === 'CUSTOM_API_SETTINGS_INVALID') return { status: 400, message: '自定义 API 配置不完整，请重新填写 Key、Base URL 和模型名称。' };
     if (error.message === 'OPENAI_INVALID_RESPONSE') return { status: 502, message: '模型返回格式异常，请重试。' };
     if (error.message === 'OPENAI_REQUEST_FAILED') return { status: 502, message: 'OpenAI 请求失败，请检查 Key、模型配置或网络。' };
     if (error.message === 'REQUEST_TOO_LARGE') return { status: 413, message: '请求内容过大。' };
@@ -171,7 +172,16 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       const preview = body.preview as TelegramPreview | undefined;
       if (!preview?.post?.text || !Array.isArray(preview.comments)) throw new Error('INVALID_JSON');
-      json(response, 200, await summarizeTelegramPost(preview.post, preview.comments, preview.warnings || [], requestContext.signal), request);
+      let settings: OpenAIRequestSettings | undefined;
+      if (body.apiKey !== undefined && typeof body.apiKey !== 'string' || body.baseUrl !== undefined && typeof body.baseUrl !== 'string' || body.model !== undefined && typeof body.model !== 'string') {
+        throw new Error('INVALID_JSON');
+      }
+      const hasCustomSettings = body.apiKey !== undefined || body.baseUrl !== undefined || body.model !== undefined;
+      if (hasCustomSettings) {
+        if (typeof body.apiKey !== 'string' || typeof body.baseUrl !== 'string' || typeof body.model !== 'string') throw new Error('CUSTOM_API_SETTINGS_INVALID');
+        settings = { apiKey: body.apiKey, baseUrl: body.baseUrl, model: body.model };
+      }
+      json(response, 200, await summarizeTelegramPost(preview.post, preview.comments, preview.warnings || [], requestContext.signal, settings), request);
       return;
     }
     json(response, 404, { message: '接口不存在。' }, request);
