@@ -148,6 +148,17 @@ Android 版只接受 HTTPS 的 OpenAI Base URL；APK 仍需要联网，不能离
 4. 结果会保存到当前浏览器的本地历史记录中。
 5. 在“最近总结”区域输入关键词，可以搜索频道、帖子正文、评论和总结内容；点击结果即可重新查看帖子和总结。
 
+## Telegram Web A 油猴脚本
+
+仓库中的 `userscript/tg-threadbrief.user.js` 可以在 Telegram Web A 的公开频道帖子右侧增加“AI”按钮。点击后会打开本地项目，自动带入公开帖子链接并开始总结。
+
+1. 安装 Tampermonkey，新建脚本并使用 `userscript/tg-threadbrief.user.js` 的内容。
+2. 通过 `TG帖子总结.lnk` 或 `npm run dev` 启动项目，确认 `http://127.0.0.1:5173` 可以访问。
+3. 打开 `https://web.telegram.org/a/` 并进入公开频道。
+4. 点击帖子右侧的“AI”按钮；项目会在新标签页中抓取并总结该帖子。
+
+脚本只传递公开的 `t.me/频道名/帖子ID` 链接，不读取或提交 Telegram 登录信息、帖子正文、API Key。首版不支持 Telegram Web K、私有频道、群组或桌面客户端。
+
 ## WebDAV 同步
 
 点击顶部云朵按钮配置 WebDAV 地址、远程文件路径、用户名和密码，再在“最近总结”区域点击“WebDAV 同步”。同步会读取远程历史，与本地最近 500 条记录按记录 ID 合并后重新上传。

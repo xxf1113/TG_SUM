@@ -31,6 +31,7 @@ import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL } from '../shared/summary
 import { DEFAULT_WEBDAV_PATH, MAX_HISTORY_ENTRIES, WebDavError, buildWebDavFileUrl, mergeHistory, normalizeWebDavPath, normalizeWebDavServerUrl, parseHistoryArchive, serializeHistory, webDavStatusError, type WebDavSettings } from '../shared/webdav';
 import { deleteHistory, listHistory, replaceHistory, saveHistory, searchHistory } from './lib/history';
 import { isStandaloneAndroid, runtimeApi, type RuntimeSettings } from './lib/runtime';
+import { parseTelegramImport, removeTelegramImport, TELEGRAM_IMPORT_PARAM } from './lib/telegram-import';
 import type { HistoryEntry, SummaryItem, SummaryResult, SummarySectionItem, TelegramPreview } from './types';
 
 type BusyAction = 'preview' | 'summary' | null;
@@ -88,6 +89,7 @@ function App() {
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [markdownAction, setMarkdownAction] = useState<'copied' | 'exported' | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const autoImportStartedRef = useRef(false);
 
   useEffect(() => {
     listHistory().then(setHistory).catch(() => undefined);
@@ -100,6 +102,21 @@ function App() {
       if (isStandaloneAndroid) setSettingsError('无法读取 Android 本地配置，请重启应用后重试。');
     });
     runtimeApi.getWebDavSettings().then(setWebDavSettings).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (autoImportStartedRef.current || !new URLSearchParams(window.location.search).has(TELEGRAM_IMPORT_PARAM)) return;
+    autoImportStartedRef.current = true;
+    const importSearch = window.location.search;
+    window.history.replaceState(window.history.state, '', removeTelegramImport(window.location.href));
+    try {
+      const importedUrl = parseTelegramImport(importSearch);
+      if (!importedUrl) return;
+      setUrl(importedUrl);
+      void handlePreview(importedUrl);
+    } catch {
+      setError('导入的 Telegram 帖子链接无效。');
+    }
   }, []);
 
   const sourceLabel = useMemo(() => preview ? `${preview.post.channel} / 帖子 ${preview.post.messageId}` : '等待公开帖子', [preview]);
@@ -278,8 +295,8 @@ function App() {
     }
   }
 
-  async function handlePreview() {
-    const requestUrl = url.trim();
+  async function handlePreview(inputUrl?: string) {
+    const requestUrl = (inputUrl ?? url).trim();
     if (!requestUrl || busy) return;
     if (isStandaloneAndroid && !settings?.hasApiKey) {
       setSettingsError('请先保存 OpenAI API Key。');
@@ -288,6 +305,7 @@ function App() {
     }
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    setUrl(requestUrl);
     setBusy('preview');
     setError('');
     setSummary(null);
