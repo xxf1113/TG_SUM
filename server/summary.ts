@@ -1,5 +1,5 @@
 import OpenAI, { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from 'openai';
-import type { ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions';
+import type { ChatCompletionCreateParamsStreaming } from 'openai/resources/chat/completions';
 import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
@@ -10,7 +10,8 @@ import type { TelegramComment, TelegramPost } from './types';
 
 export { DEFAULT_OPENAI_BASE_URL, normalizeSummaryResult } from '../shared/summary';
 
-const DEFAULT_OPENAI_TIMEOUT = 60_000;
+const DEFAULT_OPENAI_TIMEOUT = 300_000;
+const MAX_OPENAI_TIMEOUT = 600_000;
 
 export type OpenAISummaryErrorCode =
   | 'OPENAI_AUTH_FAILED'
@@ -66,7 +67,7 @@ export function resolveOpenAISettings(settings?: OpenAIRequestSettings): OpenAIR
 
 function getClient(settings: OpenAIRequestSettings): OpenAI {
   const configuredTimeout = Number(process.env.OPENAI_TIMEOUT_MS);
-  const timeout = Number.isFinite(configuredTimeout) && configuredTimeout >= 5_000 && configuredTimeout <= 300_000
+  const timeout = Number.isFinite(configuredTimeout) && configuredTimeout >= 5_000 && configuredTimeout <= MAX_OPENAI_TIMEOUT
     ? configuredTimeout
     : DEFAULT_OPENAI_TIMEOUT;
   return new OpenAI({ apiKey: settings.apiKey, baseURL: settings.baseUrl, timeout, maxRetries: 0 });
@@ -119,11 +120,14 @@ export async function summarizeTelegramPost(
       comments,
       warnings,
       async (request, requestSignal) => {
-        const response = await client.chat.completions.create(
-          request as ChatCompletionCreateParamsNonStreaming,
+        const stream = await client.chat.completions.create(
+          request as ChatCompletionCreateParamsStreaming,
           { signal: requestSignal },
         );
-        const content = response.choices[0]?.message?.content;
+        let content = '';
+        for await (const chunk of stream) {
+          content += chunk.choices[0]?.delta?.content || '';
+        }
         if (!content) throw new Error('OPENAI_EMPTY_RESPONSE');
         return content;
       },

@@ -80,7 +80,7 @@ function errorMessage(error: unknown): { status: number; message: string } {
       OPENAI_RATE_LIMITED: 'OpenAI 请求过于频繁，请稍后重试。',
       OPENAI_MODEL_NOT_FOUND: '模型不存在，或当前 API 不支持所选模型。',
       OPENAI_STRUCTURED_OUTPUT_UNSUPPORTED: '当前模型或中转站不支持结构化 JSON 输出，请更换模型或中转站。',
-      OPENAI_TIMEOUT: 'OpenAI 请求超时，请稍后重试或降低评论内容量。',
+      OPENAI_TIMEOUT: 'OpenAI 请求超时，可以在 .env 中调大 OPENAI_TIMEOUT_MS 后重试。',
       OPENAI_CANCELLED: '总结已取消。',
       OPENAI_REQUEST_FAILED: 'OpenAI 请求失败，请检查中转站地址、网络和模型配置。',
     };

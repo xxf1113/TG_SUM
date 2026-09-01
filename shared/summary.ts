@@ -15,6 +15,7 @@ export interface SummaryRequest {
   model: string;
   messages: SummaryMessage[];
   response_format: unknown;
+  stream: boolean;
 }
 
 export type SummaryCompletion = (request: SummaryRequest, signal?: AbortSignal) => Promise<string>;
@@ -56,6 +57,9 @@ export const SUMMARY_RESPONSE_FORMAT = {
   type: 'json_schema',
   json_schema: { name: 'telegram_thread_summary', strict: true, schema: summarySchema },
 } as const;
+// Streaming keeps the HTTP connection alive while the model generates, so slow
+// OpenAI-compatible relays do not hit client read timeouts on long completions.
+export const SUMMARY_STREAM = true;
 
 function truncateText(value: string, maxChars: number): { text: string; truncated: boolean } {
   return value.length > maxChars ? { text: `${value.slice(0, maxChars)}…`, truncated: true } : { text: value, truncated: false };
@@ -118,6 +122,7 @@ export function buildSummaryRequest(
       { role: 'user', content: buildPrompt(post, comments, warnings) },
     ],
     response_format: SUMMARY_RESPONSE_FORMAT,
+    stream: SUMMARY_STREAM,
   };
 }
 

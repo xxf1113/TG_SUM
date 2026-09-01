@@ -14,12 +14,13 @@ const post = {
 const comments = [{ id: 'discussion/1', author: '用户 A', publishedAt: '', text: '建议先备份数据。' }];
 
 describe('shared summary flow', () => {
-  it('builds a non-streaming structured-output request', () => {
+  it('builds a streaming structured-output request', () => {
     const request = buildSummaryRequest(post, comments, [], 'custom-model');
     expect(request.model).toBe('custom-model');
     expect(request.messages).toHaveLength(2);
     expect(request.messages[1].content).toContain('主贴内容');
     expect(request.response_format).toMatchObject({ type: 'json_schema' });
+    expect(request.stream).toBe(true);
   });
 
   it('normalizes completion output and keeps verified evidence', async () => {

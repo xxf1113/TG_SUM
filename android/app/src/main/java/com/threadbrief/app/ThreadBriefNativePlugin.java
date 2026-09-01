@@ -57,7 +57,7 @@ public class ThreadBriefNativePlugin extends Plugin {
     private static final String DEFAULT_MODEL = "gpt-5-mini";
     private static final String DEFAULT_WEBDAV_PATH = "threadbrief/history.json";
     private static final int REQUEST_TIMEOUT_MS = 15_000;
-    private static final int OPENAI_TIMEOUT_MS = 60_000;
+    private static final int OPENAI_TIMEOUT_MS = 300_000;
     private static final int WEBDAV_TIMEOUT_MS = 30_000;
     private static final int MAX_HTML_BYTES = 10 * 1024 * 1024;
     private static final int MAX_JSON_BYTES = 2 * 1024 * 1024;
@@ -333,7 +333,7 @@ public class ThreadBriefNativePlugin extends Plugin {
         try {
             connection.setDoOutput(true);
             connection.setRequestMethod("POST");
-            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Accept", "text/event-stream, application/json");
             connection.setRequestProperty("Accept-Encoding", "identity");
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             connection.setRequestProperty("Authorization", "Bearer " + apiKey);
@@ -342,6 +342,9 @@ public class ThreadBriefNativePlugin extends Plugin {
             payload.put("model", model);
             payload.put("messages", messages);
             payload.put("response_format", responseFormat);
+            // Streaming keeps bytes flowing while the model generates, so the read
+            // timeout measures gaps between chunks instead of total generation time.
+            payload.put("stream", true);
             byte[] requestBody = payload.toString().getBytes(StandardCharsets.UTF_8);
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(requestBody);
@@ -352,22 +355,59 @@ public class ThreadBriefNativePlugin extends Plugin {
             String body = inputStream == null ? "" : readBody(inputStream, MAX_JSON_BYTES);
             if (status < 200 || status >= 300) throw openAIError(status, body);
 
-            try {
-                JSONObject response = new JSONObject(body);
-                JSONArray choices = response.getJSONArray("choices");
-                JSONObject message = choices.getJSONObject(0).getJSONObject("message");
-                String content = message.optString("content", "");
-                if (content.isEmpty()) throw new NativeRequestException("模型返回内容为空。", "OPENAI_INVALID_RESPONSE");
-                JSObject result = new JSObject();
-                result.put("content", content);
-                return result;
-            } catch (JSONException error) {
-                throw new NativeRequestException("模型返回格式异常，请重试。", "OPENAI_INVALID_RESPONSE");
-            }
+            String content = readStreamedContent(body);
+            if (content == null) throw new NativeRequestException("模型返回格式异常，请重试。", "OPENAI_INVALID_RESPONSE");
+            if (content.isEmpty()) throw new NativeRequestException("模型返回内容为空。", "OPENAI_INVALID_RESPONSE");
+            JSObject result = new JSObject();
+            result.put("content", content);
+            return result;
         } finally {
             connection.disconnect();
             connections.remove(requestId);
         }
+    }
+
+    /**
+     * Concatenates delta content from a chat/completions SSE stream. Returns null when
+     * the body is not parseable at all; relays that ignore stream=true and return a
+     * normal JSON completion are also handled.
+     */
+    private String readStreamedContent(String body) {
+        StringBuilder content = new StringBuilder();
+        boolean sawDataLine = false;
+        for (String line : body.split("\n", -1)) {
+            String trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+            String data = trimmed.substring(5).trim();
+            if (data.isEmpty()) continue;
+            if ("[DONE]".equals(data)) {
+                sawDataLine = true;
+                continue;
+            }
+            sawDataLine = true;
+            try {
+                JSONArray choices = new JSONObject(data).getJSONArray("choices");
+                JSONObject delta = choices.getJSONObject(0).optJSONObject("delta");
+                if (delta != null) content.append(delta.optString("content", ""));
+            } catch (JSONException ignored) {
+                // Ignore keep-alive or non-JSON data lines.
+            }
+        }
+        if (content.length() > 0) return content.toString();
+        try {
+            JSONObject response = new JSONObject(body);
+            JSONArray choices = response.getJSONArray("choices");
+            String nonStreamed = choices.getJSONObject(0).getJSONObject("message").optString("content", "");
+            if (!nonStreamed.isEmpty()) return nonStreamed;
+        } catch (JSONException ignored) {
+            // Fall through: body is neither SSE nor a plain completion.
+        }
+        return sawDataLine || looksLikeJson(body) ? "" : null;
+    }
+
+    private boolean looksLikeJson(String body) {
+        String trimmed = body == null ? "" : body.trim();
+        return trimmed.startsWith("{") || trimmed.startsWith("[");
     }
 
     private NativeRequestException openAIError(int status, String body) {

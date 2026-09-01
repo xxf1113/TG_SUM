@@ -61,6 +61,8 @@ OPENAI_MODEL=中转站支持的模型名称
 
 程序也兼容常见的 `OPENAI_API_BASE` 环境变量。
 
+总结请求默认使用流式输出以兼容响应较慢的中转站；默认等待 300 秒（`OPENAI_TIMEOUT_MS`，可配置范围 5000–600000 毫秒）。
+
 ### Telegram 网络代理
 
 Telegram 抓取和 OpenAI 请求是两条独立的网络链路。OpenAI 中转站可用不代表 Telegram 一定可访问。
