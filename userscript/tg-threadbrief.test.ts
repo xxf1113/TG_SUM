@@ -145,7 +145,7 @@ describe('Telegram Web A userscript', () => {
         <h3 class="title">Channel Info</h3>
       </div>
       <div class="ListItem-button" role="button"><div class="multiline-item">
-        <span class="title">https://t.me/example_channel</span><span class="subtitle">Link</span>
+        <span class="title">https://t.me/example_channel</span><span class="subtitle">also <a href="https://t.me/other_channel">@other_channel</a>Link</span>
       </div></div>`;
       panel.querySelector('button')!.addEventListener('click', () => panel.remove());
       dom.window.document.body.append(panel);
@@ -160,6 +160,35 @@ describe('Telegram Web A userscript', () => {
       { active: true, insert: true, setParent: true },
     );
     expect(dom.window.document.getElementById('RightColumn')).toBeNull();
+    close(dom);
+  });
+
+  it('opens an always-mounted empty RightColumn before reading the profile', async () => {
+    const dom = setup(message('42'));
+    const rightColumn = dom.window.document.createElement('div');
+    rightColumn.id = 'RightColumn';
+    dom.window.document.body.append(rightColumn);
+    const chatInfo = dom.window.document.querySelector<HTMLElement>('.ChatInfo')!;
+    chatInfo.addEventListener('click', () => {
+      rightColumn.innerHTML = `<div class="RightHeader secondary">
+        <button aria-label="Close" title="Close">Close</button>
+        <h3 class="title">Channel Info</h3>
+      </div>
+      <div class="ListItem-button" role="button"><div class="multiline-item">
+        <span class="title">https://t.me/example_channel</span><span class="subtitle">Link</span>
+      </div></div>`;
+      rightColumn.querySelector('button')!.addEventListener('click', () => { rightColumn.innerHTML = ''; });
+    });
+    await flush(dom);
+
+    dom.window.document.querySelector<HTMLButtonElement>('.threadbrief-summary-button')!.click();
+    await flush(dom);
+
+    expect(openTabs[0]).toHaveBeenCalledWith(
+      'http://127.0.0.1:5173/?telegram=https%3A%2F%2Ft.me%2Fexample_channel%2F42',
+      { active: true, insert: true, setParent: true },
+    );
+    expect(rightColumn.textContent).toBe('');
     close(dom);
   });
 

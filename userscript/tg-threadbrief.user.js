@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TG 帖子总结一键发送
 // @namespace    https://github.com/xxf1113/TG_SUM
-// @version      1.0.0
+// @version      1.0.3
 // @description  将 Telegram Web A 的公开频道帖子发送到本地 TG 帖子总结项目
 // @match        https://web.telegram.org/a/*
 // @grant        GM_openInTab
@@ -67,6 +67,16 @@
     return rect.width > 0 && rect.height > 0;
   }
 
+  // Telegram Web A drives the chat header tap through `useLongPress`, which
+  // only reacts to native `mousedown`/`mouseup` (a short press opens the
+  // profile). A synthetic `.click()` dispatches just a `click` event, so the
+  // profile never opens. Simulate a real tap instead.
+  function simulateTap(element) {
+    for (const type of ['mousedown', 'mouseup', 'click']) {
+      element.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0 }));
+    }
+  }
+
   function showToast(message) {
     let toast = document.getElementById('threadbrief-toast');
     if (!toast) {
@@ -118,7 +128,15 @@
 
   function channelInfoRoot() {
     return [...document.querySelectorAll('#RightColumn, aside, [role="dialog"], .popup, .modal')]
-      .find((element) => isVisible(element) && !element.closest('.Message[data-message-id]')) || null;
+      .find((element) => {
+        if (!isVisible(element) || element.closest('.Message[data-message-id]')) return false;
+        // Telegram Web A keeps an empty #RightColumn mounted while it is
+        // closed. Treat it as open only after the profile has rendered.
+        if (element.id === 'RightColumn') {
+          return Boolean(element.querySelector('.ProfileInfo, .profile-info, .ChatExtra, [data-peer-id], .multiline-item'));
+        }
+        return true;
+      }) || null;
   }
 
   function isChannelInfoOpen() {
@@ -128,7 +146,10 @@
   function usernameFromChannelInfo() {
     const root = channelInfoRoot();
     if (!root) return '';
-    for (const element of root.querySelectorAll('a[href], [role="button"], [class*="title"], [class*="username"]')) {
+    // Telegram Web A renders the public link, alternate usernames, and the
+    // localized "Link" label inside one button. Read the exact title node so
+    // adjacent text cannot become part of the username.
+    for (const element of root.querySelectorAll('.multiline-item > .title, a[href], [class*="username"]')) {
       if (!isVisible(element)) continue;
       const username = usernameFromText(element.getAttribute('href')) || usernameFromText(element.textContent);
       if (username) return username;
@@ -171,9 +192,9 @@
 
     const panelWasOpen = isChannelInfoOpen();
     if (!panelWasOpen) {
-      const chatInfo = document.querySelector('#MiddleColumn .ChatInfo');
+      const chatInfo = document.querySelector('#MiddleColumn .chat-info-wrapper, #MiddleColumn .ChatInfo');
       if (!(chatInfo instanceof HTMLElement)) return '';
-      chatInfo.click();
+      simulateTap(chatInfo);
     }
 
     try {
